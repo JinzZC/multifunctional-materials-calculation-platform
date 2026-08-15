@@ -15,6 +15,7 @@ from ..core.models import MODE_LABELS, MODE_TEXTILE, Batch, strength_unit_label
 from ..core.statistics import batch_statistics
 from ..core.weibull import weibull_fit
 from ..data.repository import get_batch, get_strengths, list_batches
+from . import prefs
 
 UNSAVED = -1   # 批次组合框「当前未保存数据」的哨兵值
 
@@ -23,6 +24,8 @@ logger = logging.getLogger(__name__)
 
 def export_batch_report(parent: QWidget, batch: Batch, strengths: list, kind: str) -> None:
     """导出一个批次（或未保存数据）的 Excel/PDF 报告。kind: 'xlsx' | 'pdf'。"""
+    import os
+
     from ..fileio.exporter_excel import export_excel_report
     from ..fileio.exporter_pdf import export_pdf_report
 
@@ -39,11 +42,14 @@ def export_batch_report(parent: QWidget, batch: Batch, strengths: list, kind: st
     except ValueError:
         weibull = None
     ext = kind
-    default = f"{batch.batch_name}_报告.{ext}"
+    start = prefs.last_dir()
+    default = os.path.join(start, f"{batch.batch_name}_报告.{ext}") if start \
+        else f"{batch.batch_name}_报告.{ext}"
     path, _ = QFileDialog.getSaveFileName(
         parent, "导出报告", default, f"{ext.upper()} 文件 (*.{ext})")
     if not path:
         return
+    prefs.set_last_dir(os.path.dirname(path))
     try:
         if kind == "xlsx":
             export_excel_report(path, batch, stats, weibull)

@@ -1,0 +1,42 @@
+"""界面偏好持久化（QSettings）：窗口几何、上次目录、默认强力单位。"""
+
+from PySide6.QtCore import QSettings
+
+_ORG = "FiberTensile"
+_APP = "FiberTensileAnalyzer"
+_VALID_UNITS = ("cN", "N", "mN")
+
+
+def _settings() -> QSettings:
+    return QSettings(_ORG, _APP)
+
+
+def load_geometry():
+    """返回保存的窗口几何（QByteArray），从未保存过返回 None。"""
+    value = _settings().value("window/geometry")
+    return value if value is not None else None
+
+
+def save_geometry(geometry) -> None:
+    _settings().setValue("window/geometry", geometry)
+
+
+def last_dir() -> str:
+    """上次使用的文件对话框目录，空字符串表示未记录。"""
+    return str(_settings().value("paths/last_dir", "") or "")
+
+
+def set_last_dir(path: str) -> None:
+    if path:
+        _settings().setValue("paths/last_dir", path)
+
+
+def default_force_unit() -> str:
+    """录入页默认强力单位（校验取值合法性）。"""
+    unit = str(_settings().value("entry/default_force_unit", "cN"))
+    return unit if unit in _VALID_UNITS else "cN"
+
+
+def set_default_force_unit(unit: str) -> None:
+    if unit in _VALID_UNITS:
+        _settings().setValue("entry/default_force_unit", unit)

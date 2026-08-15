@@ -6,6 +6,7 @@ from PySide6.QtGui import QAction
 from PySide6.QtWidgets import QMainWindow, QTabWidget
 
 from ..config import APP_NAME, APP_VERSION, default_db_path
+from . import prefs
 from .analysis_tab import AnalysisTab
 from .entry_tab import EntryTab
 from .history_tab import HistoryTab
@@ -17,6 +18,9 @@ class MainWindow(QMainWindow):
         self._conn = conn
         self.setWindowTitle(f"{APP_NAME} v{APP_VERSION}")
         self.resize(1100, 760)
+        geometry = prefs.load_geometry()
+        if geometry is not None:
+            self.restoreGeometry(geometry)
 
         self._tabs = QTabWidget()
         self.entry_tab = EntryTab(conn)
@@ -66,3 +70,7 @@ class MainWindow(QMainWindow):
     def _refresh_analysis_and_history(self) -> None:
         self.analysis_tab.refresh()
         self.history_tab.refresh()
+
+    def closeEvent(self, event) -> None:
+        prefs.save_geometry(self.saveGeometry())
+        super().closeEvent(event)

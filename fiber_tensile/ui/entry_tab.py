@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import sqlite3
 
 logger = logging.getLogger(__name__)
@@ -21,6 +22,7 @@ from ..core.models import (
 from ..core.units import force_to_cn
 from ..data.repository import add_samples, create_batch
 from ..fileio.template import generate_template
+from . import prefs
 from .dialogs import ImportWizardDialog
 
 
@@ -81,6 +83,7 @@ class EntryTab(QWidget):
         self._spin_force.setValue(10.0)
         self._combo_unit = QComboBox()
         self._combo_unit.addItems(["cN", "N", "mN"])
+        self._combo_unit.setCurrentText(prefs.default_force_unit())
         force_row = QHBoxLayout()
         force_row.addWidget(self._spin_force, 1)
         force_row.addWidget(self._combo_unit)
@@ -154,6 +157,7 @@ class EntryTab(QWidget):
         self._radio_filament.toggled.connect(self._on_mode_changed)
         self._spin_force.valueChanged.connect(self._update_preview)
         self._combo_unit.currentTextChanged.connect(self._update_preview)
+        self._combo_unit.currentTextChanged.connect(prefs.set_default_force_unit)
         self._spin_diameter.valueChanged.connect(self._update_preview)
         self._spin_dtex.valueChanged.connect(self._update_preview)
         self._spin_density.valueChanged.connect(self._update_preview)
@@ -336,10 +340,14 @@ class EntryTab(QWidget):
         QMessageBox.information(self, "保存成功", f"已保存 {n} 条数据到批次「{name}」。")
 
     def _download_template(self) -> None:
+        start = prefs.last_dir()
+        default_path = os.path.join(start, "纤维强度导入模板.xlsx") if start \
+            else "纤维强度导入模板.xlsx"
         path, _ = QFileDialog.getSaveFileName(
-            self, "保存导入模板", "纤维强度导入模板.xlsx", "Excel 文件 (*.xlsx)")
+            self, "保存导入模板", default_path, "Excel 文件 (*.xlsx)")
         if not path:
             return
+        prefs.set_last_dir(os.path.dirname(path))
         generate_template(path)
         QMessageBox.information(self, "完成", f"模板已保存到：\n{path}")
 

@@ -10,8 +10,12 @@ import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from PySide6.QtCore import QTimer
+from PySide6.QtCore import QSettings, QTimer
 from PySide6.QtWidgets import QApplication, QMessageBox
+
+# 界面偏好隔离到临时 ini，避免污染真实用户设置
+QSettings.setDefaultFormat(QSettings.IniFormat)
+QSettings.setPath(QSettings.IniFormat, QSettings.UserScope, tempfile.gettempdir())
 
 # 冒烟测试中自动确认所有弹窗，避免阻塞
 QMessageBox.information = staticmethod(lambda *a, **k: QMessageBox.Ok)
@@ -101,7 +105,16 @@ def main() -> int:
     hist._batch_table.selectRow(0)
     assert hist._detail_table.rowCount() == 5
 
-    print("SMOKE OK：录入/保存/统计/Weibull/报告导出/历史明细 全部通过")
+    # 6. 界面偏好：默认单位读写、窗口几何保存
+    from fiber_tensile.ui import prefs
+    prefs.set_default_force_unit("N")
+    assert prefs.default_force_unit() == "N"
+    prefs.save_geometry(win.saveGeometry())
+    assert prefs.load_geometry() is not None
+    prefs.set_last_dir(tempfile.gettempdir())
+    assert prefs.last_dir() == tempfile.gettempdir()
+
+    print("SMOKE OK：录入/保存/统计/Weibull/报告导出/历史明细/日志/偏好 全部通过")
     QTimer.singleShot(300, app.quit)
     return app.exec()
 

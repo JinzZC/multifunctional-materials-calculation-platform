@@ -13,6 +13,7 @@ from PySide6.QtWidgets import (
 from ..core.models import MODE_FILAMENT, MODE_LABELS, MODE_TEXTILE, strength_unit_label
 from ..data.repository import list_batches
 from ..fileio.importer import ImportFileError, parse_file
+from . import prefs
 
 _PREVIEW_LIMIT = 20
 
@@ -27,10 +28,11 @@ class ImportWizardDialog(QDialog):
     @staticmethod
     def run(conn: sqlite3.Connection, parent: QWidget | None = None):
         path, _ = QFileDialog.getOpenFileName(
-            parent, "选择导入文件", "",
+            parent, "选择导入文件", prefs.last_dir() or "",
             "数据文件 (*.xlsx *.xlsm *.csv *.txt);;所有文件 (*.*)")
         if not path:
             return None
+        prefs.set_last_dir(str(Path(path).parent))
         # 解析：模式歧义（同时含直径与线密度列）时请用户指定
         mode = None
         while True:
