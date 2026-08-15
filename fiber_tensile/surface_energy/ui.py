@@ -1,4 +1,8 @@
-"""Tab④ 表面能：方法选择、液体数据录入（内置液体库）、计算保存、历史与报告。
+"""Tab④ 表面能：方法选择（白话公式）、液体数据录入、计算保存、历史与报告。
+
+页面纵向五步流：
+    ① 计算方法（公式白话展示） → ② 样品信息 → ③ 液体数据（接触角列高亮）
+    → ④ 计算结果 + 计算过程（并排，各占半宽） → ⑤ 历史记录
 
 方法单选按钮由 core.METHODS 注册表动态生成；matplotlib 仅在 Zisman 图
 首次绘制时加载。
@@ -11,6 +15,7 @@ import os
 import sqlite3
 
 from PySide6.QtCore import QDate, Qt
+from PySide6.QtGui import QColor, QFont
 from PySide6.QtWidgets import (
     QAbstractItemView, QComboBox, QDateEdit, QDialog, QDialogButtonBox,
     QDoubleSpinBox, QFileDialog, QFormLayout, QGroupBox, QHBoxLayout, QHeaderView,
@@ -19,6 +24,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..fileio.importer import ImportFileError
+from ..ui import prefs
 from .core import METHOD_LABELS, METHODS, get_method_spec, LiquidPoint
 from .exporters import export_excel_report, export_pdf_report
 from .importer import parse_measurement_file
@@ -26,11 +32,11 @@ from .repository import (
     add_liquid, create_measurement, delete_measurement, get_measurement,
     list_liquids, list_measurements,
 )
-from ..ui import prefs
 
 logger = logging.getLogger(__name__)
 
-COL_NAME, COL_GAMMA, COL_GD, COL_GP, COL_ANGLE = range(5)
+# 表格列：接触角紧随液体名称、高亮显示，其余参数由液体库自动填充
+COL_NAME, COL_ANGLE, COL_GAMMA, COL_GD, COL_GP = range(5)
 
 
 class SurfaceEnergyTab(QWidget):
@@ -49,11 +55,12 @@ class SurfaceEnergyTab(QWidget):
     # ---- UI ----
 
     def _build_ui(self) -> None:
-        root = QHBoxLayout(self)
+        root = QVBoxLayout(self)
 
-        left = QVBoxLayout()
+        # ---- 第一行：① 计算方法（白话公式） + ② 样品信息 ----
+        top_row = QHBoxLayout()
 
-        method_box = QGroupBox("计算方法")
+        method_box = QGroupBox("① 计算方法（公式如下）")
         m_layout = QVBoxLayout(method_box)
         radio_row = QHBoxLayout()
         self._radio_methods: dict[str, QRadioButton] = {}
@@ -63,17 +70,19 @@ class SurfaceEnergyTab(QWidget):
             self._radio_methods[key] = radio
             radio_row.addWidget(radio)
         m_layout.addLayout(radio_row)
-        # 当前方法的计算公式
         self._lbl_equations = QLabel()
         self._lbl_equations.setWordWrap(True)
         self._lbl_equations.setStyleSheet(
-            "font-family: Consolas, 'Microsoft YaHei'; font-size: 9pt;"
-            "background: #FBFDFF; border: 1px solid #DDEBF7;"
+            "font-size: 9pt; background: #FBFDFF; border: 1px solid #DDEBF7;"
             "border-radius: 4px; padding: 6px;")
         m_layout.addWidget(self._lbl_equations)
-        left.addWidget(method_box)
+        self._lbl_hint = QLabel()
+        self._lbl_hint.setWordWrap(True)
+        self._lbl_hint.setStyleSheet("color: #1F4E79;")
+        m_layout.addWidget(self._lbl_hint)
+        top_row.addWidget(method_box, 2)
 
-        info_box = QGroupBox("样品信息")
+        info_box = QGroupBox("② 样品信息")
         form = QFormLayout(info_box)
         self._edit_sample_name = QLineEdit()
         self._edit_sample_name.setPlaceholderText("必填，如：PTFE 薄膜")
@@ -84,38 +93,64 @@ class SurfaceEnergyTab(QWidget):
         form.addRow("样品名称：", self._edit_sample_name)
         form.addRow("备注：", self._edit_remark)
         form.addRow("测试日期：", self._date_test)
-        left.addWidget(info_box)
+        top_row.addWidget(info_box, 1)
+        root.addLayout(top_row)
 
-        self._lbl_hint = QLabel()
-        self._lbl_hint.setWordWrap(True)
-        self._lbl_hint.setStyleSheet("color: #1F4E79; padding: 4px;")
-        left.addWidget(self._lbl_hint)
-
-        buttons = QHBoxLayout()
+        # ---- 操作按钮 ----
+        btn_row = QHBoxLayout()
         self._btn_save = QPushButton("计算并保存")
         self._btn_save.setStyleSheet("font-weight: bold;")
         self._btn_import = QPushButton("批量导入…")
-        buttons.addWidget(self._btn_save)
-        buttons.addWidget(self._btn_import)
-        left.addLayout(buttons)
-        buttons2 = QHBoxLayout()
         self._btn_add_liquid = QPushButton("添加自定义液体…")
         self._btn_clear = QPushButton("清空表格")
-        buttons2.addWidget(self._btn_add_liquid)
-        buttons2.addWidget(self._btn_clear)
-        left.addLayout(buttons2)
+        for b in (self._btn_save, self._btn_import, self._btn_add_liquid, self._btn_clear):
+            btn_row.addWidget(b)
+        btn_row.addStretch(1)
+        root.addLayout(btn_row)
 
-        result_box = QGroupBox("计算结果")
+        # ---- ③ 液体数据录入（接触角列高亮）----
+        liquid_header = QHBoxLayout()
+        liquid_header.addWidget(QLabel(
+            "③ 液体数据：选择液体后自动填充参数，只需填写蓝色【接触角(°)】列："))
+        liquid_header.addStretch(1)
+        self._btn_add_row = QPushButton("添加液体")
+        self._btn_delete_row = QPushButton("删除选中行")
+        liquid_header.addWidget(self._btn_add_row)
+        liquid_header.addWidget(self._btn_delete_row)
+        root.addLayout(liquid_header)
+        self._table = QTableWidget(0, 5)
+        self._table.setHorizontalHeaderLabels(
+            ["液体名称", "接触角(°)", "γ_L(mN/m)", "γ^d(mN/m)", "γ^p(mN/m)"])
+        self._table.setSelectionBehavior(QAbstractItemView.SelectRows)
+        self._table.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        self._table.verticalHeader().setVisible(False)
+        self._table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
+        # 接触角列视觉突出
+        angle_header = self._table.horizontalHeaderItem(COL_ANGLE)
+        angle_header.setForeground(QColor("#1F4E79"))
+        font = QFont()
+        font.setBold(True)
+        angle_header.setFont(font)
+        self._table.setColumnWidth(COL_NAME, 140)
+        self._table.setColumnWidth(COL_ANGLE, 110)
+        self._table.setMinimumHeight(150)
+        root.addWidget(self._table, 2)
+
+        # ---- ④ 计算结果 + 计算过程（并排，各占半宽）----
+        result_row = QHBoxLayout()
+
+        result_box = QGroupBox("④ 计算结果")
         r_layout = QVBoxLayout(result_box)
-        self._lbl_gd = QLabel("色散分量 γ^d：—")
-        self._lbl_gp = QLabel("极性分量 γ^p：—")
-        self._lbl_gt = QLabel("总表面能 γ_S：—")
-        self._lbl_gc = QLabel("临界表面张力 γ_c：—")
+        self._lbl_gd = QLabel("色散分量：—")
+        self._lbl_gp = QLabel("极性分量：—")
+        self._lbl_gt = QLabel("总表面能：—")
+        self._lbl_gc = QLabel("临界表面张力：—")
         self._lbl_r2 = QLabel("拟合优度 R²：—")
         for lbl in (self._lbl_gd, self._lbl_gp, self._lbl_gt, self._lbl_gc, self._lbl_r2):
             r_layout.addWidget(lbl)
         self._per_table = QTableWidget(0, 3)
-        self._per_table.setHorizontalHeaderLabels(["液体名称", "界面能 γ_SL(mN/m)", "粘附功 W_A(mN/m)"])
+        self._per_table.setHorizontalHeaderLabels(
+            ["液体名称", "界面能(mN/m)", "粘附功(mN/m)"])
         self._per_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self._per_table.verticalHeader().setVisible(False)
         self._per_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
@@ -130,41 +165,21 @@ class SurfaceEnergyTab(QWidget):
         f_layout.addWidget(self._canvas_placeholder)
         self._figure_container.setVisible(False)
         r_layout.addWidget(self._figure_container)
-        left.addWidget(result_box, 1)
+        result_row.addWidget(result_box, 1)
 
-        # 计算过程面板
         process_box = QGroupBox("计算过程")
         p_layout = QVBoxLayout(process_box)
         self._txt_process = QPlainTextEdit()
         self._txt_process.setReadOnly(True)
-        self._txt_process.setPlaceholderText("点击「计算并保存」后在此显示逐步计算过程")
+        self._txt_process.setPlaceholderText("点击「计算并保存」后，在此显示逐步计算过程")
         self._txt_process.setStyleSheet(
-            "font-family: Consolas, 'Microsoft YaHei'; font-size: 9pt;")
+            "font-family: Consolas, 'Microsoft YaHei'; font-size: 9.5pt;")
         p_layout.addWidget(self._txt_process)
-        left.addWidget(process_box, 1)
+        result_row.addWidget(process_box, 1)
+        root.addLayout(result_row, 2)
 
-        root.addLayout(left, 3)
-
-        right = QVBoxLayout()
-        # 液体数据表：行操作按钮放在表格标题旁
-        liquid_header = QHBoxLayout()
-        liquid_header.addWidget(QLabel("液体数据（液体名称可从参数库选择自动填充，θ 为接触角）："))
-        liquid_header.addStretch(1)
-        self._btn_add_row = QPushButton("添加液体")
-        self._btn_delete_row = QPushButton("删除选中行")
-        liquid_header.addWidget(self._btn_add_row)
-        liquid_header.addWidget(self._btn_delete_row)
-        right.addLayout(liquid_header)
-        self._table = QTableWidget(0, 5)
-        self._table.setHorizontalHeaderLabels(
-            ["液体名称", "γ_L(mN/m)", "γ^d(mN/m)", "γ^p(mN/m)", "接触角(°)"])
-        self._table.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self._table.setSelectionMode(QAbstractItemView.ExtendedSelection)
-        self._table.verticalHeader().setVisible(False)
-        self._table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        right.addWidget(self._table, 2)
-
-        right.addWidget(QLabel("历史记录："))
+        # ---- ⑤ 历史记录 ----
+        root.addWidget(QLabel("⑤ 历史记录："))
         self._history = QTableWidget(0, 8)
         self._history.setHorizontalHeaderLabels(
             ["样品名称", "方法", "γ^d", "γ^p", "γ_S", "γ_c", "R²", "测试日期"])
@@ -175,18 +190,16 @@ class SurfaceEnergyTab(QWidget):
         self._history.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
         self._history.horizontalHeader().setStretchLastSection(True)
         self._history.setColumnWidth(0, 180)
-        right.addWidget(self._history, 3)
+        root.addWidget(self._history, 2)
 
-        # 历史记录操作按钮
         h_buttons = QHBoxLayout()
         self._btn_delete_hist = QPushButton("删除记录")
         self._btn_export_xlsx = QPushButton("导出 Excel 报告…")
         self._btn_export_pdf = QPushButton("导出 PDF 报告…")
         for b in (self._btn_delete_hist, self._btn_export_xlsx, self._btn_export_pdf):
             h_buttons.addWidget(b)
-        right.addLayout(h_buttons)
-
-        root.addLayout(right, 4)
+        h_buttons.addStretch(1)
+        root.addLayout(h_buttons)
 
     def _connect_signals(self) -> None:
         for radio in self._radio_methods.values():
@@ -270,9 +283,11 @@ class SurfaceEnergyTab(QWidget):
         for row in range(self._table.rowCount()):
             combo = self._table.cellWidget(row, COL_NAME)
             name = combo.currentText().strip() if combo is not None else ""
+
             def cell_text(col):
                 item = self._table.item(row, col)
                 return item.text().strip() if item is not None else ""
+
             def parse_float(text, label, required=True, allow_zero=False):
                 if not text:
                     if required:
@@ -310,17 +325,17 @@ class SurfaceEnergyTab(QWidget):
 
     def _show_result(self, result) -> None:
         self._lbl_gd.setText(
-            f"色散分量 γ^d：{result.gamma_d:.2f} mN/m" if result.gamma_d is not None
-            else "色散分量 γ^d：—")
+            f"色散分量：{result.gamma_d:.2f} mN/m" if result.gamma_d is not None
+            else "色散分量：—")
         self._lbl_gp.setText(
-            f"极性分量 γ^p：{result.gamma_p:.2f} mN/m" if result.gamma_p is not None
-            else "极性分量 γ^p：—")
+            f"极性分量：{result.gamma_p:.2f} mN/m" if result.gamma_p is not None
+            else "极性分量：—")
         self._lbl_gt.setText(
-            f"总表面能 γ_S：{result.gamma_total:.2f} mN/m" if result.gamma_total is not None
-            else "总表面能 γ_S：—")
+            f"总表面能：{result.gamma_total:.2f} mN/m" if result.gamma_total is not None
+            else "总表面能：—")
         self._lbl_gc.setText(
-            f"临界表面张力 γ_c：{result.gamma_c:.2f} mN/m" if result.gamma_c is not None
-            else "临界表面张力 γ_c：—")
+            f"临界表面张力：{result.gamma_c:.2f} mN/m" if result.gamma_c is not None
+            else "临界表面张力：—")
         self._lbl_r2.setText(
             f"拟合优度 R²：{result.r2:.4f}" if result.r2 is not None else "拟合优度 R²：—")
         per = result.per_liquid or []

@@ -154,31 +154,33 @@ def compute_owrk(points: list) -> SurfaceEnergyResult:
     a = np.zeros((n, 2))
     c = np.zeros(n)
     steps = [f"计算过程（OWRK 双液法，{n} 种液体）",
-             "① 各液体计算 c_i = γ_L·(1+cosθ)："]
+             "① 每个液体算一个数：液体表面张力 × (1 + cos接触角)："]
     for i, p in enumerate(points):
         a[i] = (2.0 * math.sqrt(p.gamma_d), 2.0 * math.sqrt(p.gamma_p))
         c[i] = p.gamma_total * (1.0 + math.cos(math.radians(p.angle_deg)))
-        steps.append(f"   {p.liquid_name}：{p.gamma_total:g}×(1+cos{p.angle_deg:g}°) "
+        steps.append(f"   {p.liquid_name}：{p.gamma_total:g} × (1+cos{p.angle_deg:g}°) "
                      f"= {c[i]:.4f}")
-    steps.append("② 构建矩阵 A（列：2√γ^d、2√γ^p）与向量 c，最小二乘求解 A·x = c：")
-    steps.append("   A = " + str([[round(v, 4) for v in row] for row in a.tolist()]))
-    steps.append("   c = " + str([round(v, 4) for v in c.tolist()]))
+    steps.append("② 方程组（每液体一行，两个未知数 √固体色散、√固体极性，系数为 "
+                 "2×√液体色散 和 2×√液体极性），最小二乘求解：")
+    steps.append("   系数表 = " + str([[round(v, 4) for v in row] for row in a.tolist()])
+                 + "，右侧值 = " + str([round(v, 4) for v in c.tolist()]))
     x, *_ = np.linalg.lstsq(a, c, rcond=None)
     xd, xp = float(x[0]), float(x[1])
-    steps.append(f"③ 解得 x = [√γ_S^d, √γ_S^p] = [{xd:.4f}, {xp:.4f}]")
+    steps.append(f"③ 解得 √固体色散 = {xd:.4f}，√固体极性 = {xp:.4f}")
     if xd < 0 or xp < 0:
         steps.append("   出现负的平方根 → 所选液体组合不适用 OWRK 法")
         raise ValueError(
             "出现负的平方根，所选液体组合不适用 OWRK 法"
             "（建议极性 + 非极性液体搭配，如 水 + 二碘甲烷）")
     gamma_d, gamma_p = xd ** 2, xp ** 2
-    steps.append(f"④ 平方得：γ_S^d = {gamma_d:.2f} mN/m，γ_S^p = {gamma_p:.2f} mN/m")
-    steps.append(f"⑤ 总表面能：γ_S = γ_S^d + γ_S^p = {gamma_d + gamma_p:.2f} mN/m")
+    steps.append(f"④ 平方还原：色散分量 = {gamma_d:.2f} mN/m，极性分量 = {gamma_p:.2f} mN/m")
+    steps.append(f"⑤ 总表面能 = 色散分量 + 极性分量 = {gamma_d + gamma_p:.2f} mN/m")
     r2 = _r2(c, a @ x)
     steps.append(f"⑥ 拟合优度 R² = {r2:.4f}")
     per = _per_liquid_geometric(points, gamma_d, gamma_p)
-    steps.append("⑦ 界面能（几何平均公式 γ_SL = γ_S + γ_L − 2(√(γ_S^d·γ_L^d) + √(γ_S^p·γ_L^p))）"
-                 f"与粘附功（W_A = γ_L·(1+cosθ)）：")
+    steps.append("⑦ 各液体的界面能（界面能 = 固体总表面能 + 液体表面张力"
+                 " − 2×√(固体色散×液体色散) − 2×√(固体极性×液体极性)）"
+                 "与粘附功（粘附功 = 液体表面张力×(1+cos接触角)）：")
     steps += _steps_per_liquid(points, per)
     return SurfaceEnergyResult(
         method=METHOD_OWRK, gamma_d=gamma_d, gamma_p=gamma_p,
@@ -193,10 +195,11 @@ def compute_wu(points: list) -> SurfaceEnergyResult:
             raise ValueError(f"Wu 法需要液体的 γ^d 与 γ^p 分量（液体「{p.liquid_name}」缺失）")
     seed = compute_owrk(points)   # OWRK 解作迭代初值
     steps = [f"计算过程（Wu 调和平均法，{len(points)} 种液体）",
-             "调和平均方程组：γ_L(1+cosθ) = 4γ_S^d·γ_L^d/(γ_S^d+γ_L^d) "
-             "+ 4γ_S^p·γ_L^p/(γ_S^p+γ_L^p)（每液体一方程）",
-             f"① 以 OWRK 解为迭代初值：γ_S^d = {seed.gamma_d:.4f}，"
-             f"γ_S^p = {seed.gamma_p:.4f}"]
+             "调和平均方程组（每液体一个方程）：液体表面张力 × (1+cos接触角)"
+             " = 4×固体色散×液体色散÷(固体色散+液体色散)"
+             " + 4×固体极性×液体极性÷(固体极性+液体极性)",
+             f"① 以 OWRK 解为迭代初值：色散分量 = {seed.gamma_d:.4f}，"
+             f"极性分量 = {seed.gamma_p:.4f}"]
 
     def term(v, lv):
         # 任一分量为 0 时该项为 0（避免 0/0）
@@ -261,17 +264,18 @@ def compute_wu(points: list) -> SurfaceEnergyResult:
     if np.max(residual) > 0.5 * np.max(np.abs(c)):
         raise ValueError("Wu 法迭代未收敛，请检查数据或换用 OWRK 法")
     gamma_d, gamma_p = max(gd, 0.0), max(gp, 0.0)
-    steps.append(f"③ 收敛解：γ_S^d = {gamma_d:.4f}，γ_S^p = {gamma_p:.4f}")
+    steps.append(f"③ 收敛解：色散分量 = {gamma_d:.4f}，极性分量 = {gamma_p:.4f}")
     steps.append(f"④ 最大残差 = {np.max(residual):.3e}"
-                 f"（收敛判定阈值 0.5×max|c| = {0.5 * np.max(np.abs(c)):.4f}，通过）")
-    steps.append(f"⑤ 总表面能：γ_S = γ_S^d + γ_S^p = {gamma_d + gamma_p:.2f} mN/m")
+                 f"（收敛判定阈值 0.5×最大右侧值 = {0.5 * np.max(np.abs(c)):.4f}，通过）")
+    steps.append(f"⑤ 总表面能 = 色散分量 + 极性分量 = {gamma_d + gamma_p:.2f} mN/m")
     c_pred = c - np.array(target(gamma_d, gamma_p))
     r2 = _r2(c, c_pred)
     steps.append(f"⑥ 拟合优度 R² = {r2:.4f}")
     per = _per_liquid_harmonic(points, gamma_d, gamma_p)
-    steps.append("⑦ 界面能（调和平均公式 γ_SL = γ_S + γ_L "
-                 "− 4γ_S^d·γ_L^d/(γ_S^d+γ_L^d) − 4γ_S^p·γ_L^p/(γ_S^p+γ_L^p)）"
-                 f"与粘附功（W_A = γ_L·(1+cosθ)）：")
+    steps.append("⑦ 各液体的界面能（界面能 = 固体总表面能 + 液体表面张力"
+                 " − 4×固体色散×液体色散÷(固体色散+液体色散)"
+                 " − 4×固体极性×液体极性÷(固体极性+液体极性)）"
+                 "与粘附功（粘附功 = 液体表面张力×(1+cos接触角)）：")
     steps += _steps_per_liquid(points, per)
     return SurfaceEnergyResult(
         method=METHOD_WU, gamma_d=gamma_d, gamma_p=gamma_p,
@@ -288,11 +292,12 @@ def compute_fowkes(points: list) -> SurfaceEnergyResult:
         raise ValueError(f"Fowkes 法需要液体的 γ^d 分量（液体「{p.liquid_name}」缺失）")
     wa = _wa(p)
     steps = ["计算过程（Fowkes 法）",
-             "公式：γ_S^d = [γ_L·(1+cosθ)]² / (4·γ_L^d)",
-             f"① γ_L·(1+cosθ) = {p.gamma_total:g}×(1+cos{p.angle_deg:g}°) = {wa:.4f}",
-             f"② γ_S^d = {wa:.4f}² / (4×{p.gamma_d:g}) = "
+             "公式：固体色散分量 = [液体表面张力 × (1 + cos接触角)]² ÷ (4 × 液体色散分量)",
+             f"① 液体表面张力×(1+cos接触角) = {p.gamma_total:g}×(1+cos{p.angle_deg:g}°)"
+             f" = {wa:.4f}",
+             f"② 固体色散分量 = {wa:.4f}² ÷ (4×{p.gamma_d:g}) = "
              f"{wa ** 2 / (4.0 * p.gamma_d):.4f} mN/m",
-             f"③ 总表面能 γ_S ≈ γ_S^d = {wa ** 2 / (4.0 * p.gamma_d):.2f} mN/m"
+             f"③ 总表面能 ≈ 色散分量 = {wa ** 2 / (4.0 * p.gamma_d):.2f} mN/m"
              "（Fowkes 法仅计算色散分量）"]
     gamma_d = wa ** 2 / (4.0 * p.gamma_d)
     per = [(p.liquid_name, gamma_d, wa)]
@@ -309,23 +314,23 @@ def compute_zisman(points: list) -> SurfaceEnergyResult:
     y = np.array([math.cos(math.radians(p.angle_deg)) for p in points])
     slope, intercept = np.polyfit(x, y, 1)
     steps = [f"计算过程（Zisman 法，{len(points)} 个数据点）",
-             "① 数据点 (γ_L, cosθ)："]
+             "① 每个液体一个数据点（液体表面张力, cos接触角）："]
     for p, yi in zip(points, y):
-        steps.append(f"   {p.liquid_name}：γ_L = {p.gamma_total:g}，"
-                     f"θ = {p.angle_deg:g}° → cosθ = {yi:.4f}")
-    steps.append(f"② 线性回归：cosθ = {slope:.4f}·γ_L "
+        steps.append(f"   {p.liquid_name}：液体表面张力 = {p.gamma_total:g}，"
+                     f"接触角 = {p.angle_deg:g}° → cos接触角 = {yi:.4f}")
+    steps.append(f"② 直线拟合：cos接触角 = {slope:.4f} × 液体表面张力 "
                  + ("+" if intercept >= 0 else "−") + f" {abs(intercept):.4f}")
     if abs(slope) < 1e-12:
         steps.append("   斜率接近 0 → 无法外推")
         raise ValueError("拟合斜率接近 0，无法外推临界表面张力（请检查接触角数据）")
     gamma_c = (1.0 - intercept) / slope
-    steps.append(f"③ 临界表面张力：γ_c = (1 − ({intercept:.4f})) / ({slope:.4f}) "
+    steps.append(f"③ 临界表面张力 = (1 − ({intercept:.4f})) ÷ ({slope:.4f}) "
                  f"= {gamma_c:.2f} mN/m")
     r2 = float(np.corrcoef(x, y)[0, 1] ** 2)
     steps.append(f"④ 拟合优度 R² = {r2:.4f}")
     per_liquid = [(p.liquid_name, None, _wa(p)) for p in points]
-    steps.append("⑤ 粘附功（W_A = γ_L·(1+cosθ)）：")
-    steps += [f"   {p.liquid_name}：W_A = {_wa(p):.2f} mN/m" for p in points]
+    steps.append("⑤ 各液体粘附功（粘附功 = 液体表面张力 × (1 + cos接触角)）：")
+    steps += [f"   {p.liquid_name}：粘附功 = {_wa(p):.2f} mN/m" for p in points]
     return SurfaceEnergyResult(
         method=METHOD_ZISMAN, gamma_c=gamma_c, r2=r2, per_liquid=per_liquid,
         steps=steps)
@@ -338,36 +343,41 @@ METHODS: dict[str, MethodSpec] = {
         key=METHOD_OWRK, label="OWRK 双液法", min_points=2, max_points=None,
         needs_gamma_d=True, needs_gamma_p=True,
         hint="需 ≥2 种液体，建议极性 + 非极性搭配（如 水 + 二碘甲烷）",
-        equations=("γ_L·(1+cosθ) = 2·√(γ_S^d·γ_L^d) + 2·√(γ_S^p·γ_L^p)\n"
-                   "γ_S = γ_S^d + γ_S^p\n"
-                   "界面能（几何平均）：γ_SL = γ_S + γ_L "
-                   "− 2(√(γ_S^d·γ_L^d) + √(γ_S^p·γ_L^p))\n"
-                   + _EQ_WA),
+        equations=("每个液体一个方程：液体表面张力 × (1 + cos接触角)"
+                   " = 2×√(固体色散分量 × 液体色散分量) + 2×√(固体极性分量 × 液体极性分量)\n"
+                   "总表面能 = 色散分量 + 极性分量\n"
+                   "界面能 = 固体总表面能 + 液体表面张力"
+                   " − 2×√(固体色散×液体色散) − 2×√(固体极性×液体极性)\n"
+                   "粘附功 = 液体表面张力 × (1 + cos接触角)"),
         compute=compute_owrk),
     METHOD_WU: MethodSpec(
         key=METHOD_WU, label="Wu 调和平均法", min_points=2, max_points=None,
         needs_gamma_d=True, needs_gamma_p=True,
         hint="需 ≥2 种液体，调和平均公式，适合低能表面",
-        equations=("γ_L·(1+cosθ) = 4·γ_S^d·γ_L^d/(γ_S^d+γ_L^d) "
-                   "+ 4·γ_S^p·γ_L^p/(γ_S^p+γ_L^p)\n"
-                   "γ_S = γ_S^d + γ_S^p\n"
-                   "界面能（调和平均）：γ_SL = γ_S + γ_L "
-                   "− 4γ_S^d·γ_L^d/(γ_S^d+γ_L^d) − 4γ_S^p·γ_L^p/(γ_S^p+γ_L^p)\n"
-                   + _EQ_WA),
+        equations=("每个液体一个方程：液体表面张力 × (1 + cos接触角)"
+                   " = 4×固体色散×液体色散÷(固体色散+液体色散)"
+                   " + 4×固体极性×液体极性÷(固体极性+液体极性)\n"
+                   "总表面能 = 色散分量 + 极性分量\n"
+                   "界面能 = 固体总表面能 + 液体表面张力"
+                   " − 4×固体色散×液体色散÷(固体色散+液体色散)"
+                   " − 4×固体极性×液体极性÷(固体极性+液体极性)\n"
+                   "粘附功 = 液体表面张力 × (1 + cos接触角)"),
         compute=compute_wu),
     METHOD_FOWKES: MethodSpec(
         key=METHOD_FOWKES, label="Fowkes 法", min_points=1, max_points=1,
         needs_gamma_d=True, needs_gamma_p=False,
-        hint="仅 1 种非极性液体，只能计算色散分量 γ^d",
-        equations=("γ_S^d = [γ_L·(1+cosθ)]² / (4·γ_L^d)\n"
-                   "γ_S ≈ γ_S^d（仅色散分量）\n" + _EQ_WA),
+        hint="仅 1 种非极性液体，只能计算色散分量",
+        equations=("固体色散分量 = [液体表面张力 × (1 + cos接触角)]² ÷ (4 × 液体色散分量)\n"
+                   "总表面能 ≈ 色散分量（Fowkes 法仅计算色散分量）\n"
+                   "粘附功 = 液体表面张力 × (1 + cos接触角)"),
         compute=compute_fowkes),
     METHOD_ZISMAN: MethodSpec(
         key=METHOD_ZISMAN, label="Zisman 法", min_points=2, max_points=None,
         needs_gamma_d=False, needs_gamma_p=False,
-        hint="同系列液体（建议 ≥3 种），外推临界表面张力 γ_c",
-        equations=("cosθ = m·γ_L + b（线性回归）\n"
-                   "γ_c = (1 − b) / m\n" + _EQ_WA),
+        hint="同系列液体（建议 ≥3 种），外推临界表面张力",
+        equations=("cos接触角 = 斜率 × 液体表面张力 + 截距（对数据点做直线拟合）\n"
+                   "临界表面张力 = (1 − 截距) ÷ 斜率\n"
+                   "粘附功 = 液体表面张力 × (1 + cos接触角)"),
         compute=compute_zisman),
 }
 

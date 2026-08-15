@@ -133,18 +133,19 @@ def main() -> int:
     st = win.surface_tab
     st._radio_methods["owrk"].setChecked(True)
     assert st._btn_add_row.text() == "添加液体"
-    assert "γ_L·(1+cosθ)" in st._lbl_equations.text(), st._lbl_equations.text()
+    assert "液体表面张力 × (1 + cos接触角)" in st._lbl_equations.text(), st._lbl_equations.text()
+    assert st._table.horizontalHeaderItem(1).text() == "接触角(°)"
     st._edit_sample_name.setText("冒烟-PTFE")
     st._add_row()
     st._table.cellWidget(0, 0).setCurrentText("水")    # 从液体库选择 → 自动填充 γ 参数
-    assert st._table.item(0, 1).text() == "72.8"
-    st._table.item(0, 4).setText("108")
+    assert st._table.item(0, 2).text() == "72.8"
+    st._table.item(0, 1).setText("108")
     st._add_row()
     st._table.cellWidget(1, 0).setCurrentText("二碘甲烷")
-    st._table.item(1, 4).setText("77")
+    st._table.item(1, 1).setText("77")
     st._save()
     assert st._history.rowCount() == 1
-    assert st._lbl_gt.text().startswith("总表面能 γ_S：19.50"), st._lbl_gt.text()
+    assert st._lbl_gt.text().startswith("总表面能：19.50"), st._lbl_gt.text()
     assert st._per_table.rowCount() == 2
     process_text = st._txt_process.toPlainText()
     assert "计算过程（OWRK" in process_text and "最小二乘" in process_text, process_text
@@ -171,16 +172,16 @@ def main() -> int:
         combo.setEditable(True)
         combo.addItems([l["name"] for l in st._liquid_library()])
         st._table.setCellWidget(r, 0, combo)
-        st._table.setItem(r, 1, QTableWidgetItem(f"{gamma_l:g}"))
-        st._table.setItem(r, 2, QTableWidgetItem(""))
+        st._table.setItem(r, 1, QTableWidgetItem(f"{math.degrees(math.acos(cos_t)):g}"))
+        st._table.setItem(r, 2, QTableWidgetItem(f"{gamma_l:g}"))
         st._table.setItem(r, 3, QTableWidgetItem(""))
-        st._table.setItem(r, 4, QTableWidgetItem(f"{math.degrees(math.acos(cos_t)):g}"))
+        st._table.setItem(r, 4, QTableWidgetItem(""))
     st._save()
     assert st._history.rowCount() == 2
     assert "20.00" in st._lbl_gc.text(), st._lbl_gc.text()
     canvas_texts = [t.get_text() for ax in st._canvas.fig.axes for t in ax.texts]
     assert any("临界表面张力" in t for t in canvas_texts), canvas_texts
-    assert "线性回归" in st._txt_process.toPlainText()
+    assert "直线拟合" in st._txt_process.toPlainText()
 
     # 9. 模块导航栏：两个模块可切换并记忆
     assert win._nav.count() == 2

@@ -174,7 +174,7 @@ def test_steps_generated_for_all_methods():
     pts = [LiquidPoint(f"液{g:g}", g, math.degrees(math.acos(1.4 - 0.02 * g)))
            for g in (30.0, 40.0, 50.0)]
     r_z = compute_surface_energy(METHOD_ZISMAN, pts)
-    assert any("线性回归" in s for s in r_z.steps)
+    assert any("直线拟合" in s for s in r_z.steps)
     assert any("临界表面张力" in s for s in r_z.steps)
 
 
