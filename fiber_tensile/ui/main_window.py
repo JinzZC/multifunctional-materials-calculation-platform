@@ -6,6 +6,7 @@ from PySide6.QtGui import QAction
 from PySide6.QtWidgets import QMainWindow, QTabWidget
 
 from ..config import APP_NAME, APP_VERSION, default_db_path
+from ..surface_energy.ui import SurfaceEnergyTab
 from . import prefs
 from .analysis_tab import AnalysisTab
 from .entry_tab import EntryTab
@@ -26,10 +27,12 @@ class MainWindow(QMainWindow):
         self.entry_tab = EntryTab(conn)
         self.analysis_tab = AnalysisTab(conn)
         self.history_tab = HistoryTab(conn)
+        self.surface_tab = SurfaceEnergyTab(conn)
         self.analysis_tab.set_entry_tab(self.entry_tab)
         self._tabs.addTab(self.entry_tab, "① 数据录入")
         self._tabs.addTab(self.analysis_tab, "② 统计分析")
         self._tabs.addTab(self.history_tab, "③ 历史记录")
+        self._tabs.addTab(self.surface_tab, "④ 表面能")
         self.setCentralWidget(self._tabs)
 
         self._build_menu()

@@ -41,16 +41,57 @@ CREATE INDEX IF NOT EXISTS idx_samples_batch ON samples(batch_id);
 CREATE INDEX IF NOT EXISTS idx_batches_created ON batches(created_at);
 """
 
-# 未来扩展示例：
-#   - 新增计算模式（core/modes.py 注册表）时：batches.mode 的 CHECK 约束需要放宽，
-#     需写 v2 迁移重建 batches 表（SQLite 不支持修改 CHECK），并迁移旧数据；
-#   - 追加复合材料电磁屏蔽等新功能域的表：
-# _SCHEMA_V2 = """
-# CREATE TABLE IF NOT EXISTS emi_evaluations (
-#     id INTEGER PRIMARY KEY AUTOINCREMENT, ...);
-# """
+# v2：表面能计算模块（第二个功能域）
+#   se_measurements 测量记录（结果缓存列由持久层在创建时写入）
+#   se_liquid_points 每条测量使用的液体与接触角（级联删除）
+#   se_liquids 液体参数库（内置 8 种 + 用户自定义）
+_SCHEMA_V2 = """
+CREATE TABLE IF NOT EXISTS se_measurements (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    sample_name TEXT    NOT NULL,
+    method      TEXT    NOT NULL CHECK(method IN ('owrk','wu','fowkes','zisman')),
+    gamma_d     REAL,
+    gamma_p     REAL,
+    gamma_total REAL,
+    gamma_c     REAL,
+    r2          REAL,
+    remark      TEXT,
+    test_date   TEXT,
+    created_at  TEXT    NOT NULL DEFAULT (datetime('now','localtime'))
+);
+
+CREATE TABLE IF NOT EXISTS se_liquid_points (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    measurement_id INTEGER NOT NULL REFERENCES se_measurements(id) ON DELETE CASCADE,
+    liquid_name    TEXT    NOT NULL,
+    gamma_total    REAL    NOT NULL,
+    gamma_d        REAL,
+    gamma_p        REAL,
+    angle_deg      REAL    NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS se_liquids (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    name        TEXT    NOT NULL UNIQUE,
+    gamma_total REAL    NOT NULL,
+    gamma_d     REAL    NOT NULL,
+    gamma_p     REAL    NOT NULL,
+    builtin     INTEGER NOT NULL DEFAULT 0
+);
+
+INSERT OR IGNORE INTO se_liquids (name, gamma_total, gamma_d, gamma_p, builtin) VALUES
+ ('水', 72.8, 21.8, 51.0, 1),
+ ('二碘甲烷', 50.8, 50.8, 0.0, 1),
+ ('乙二醇', 48.0, 29.0, 19.0, 1),
+ ('甘油', 64.0, 34.0, 30.0, 1),
+ ('甲酰胺', 58.2, 39.5, 18.7, 1),
+ ('α-溴萘', 44.4, 44.4, 0.0, 1),
+ ('十六烷', 27.6, 27.6, 0.0, 1),
+ ('苯甲醇', 39.0, 30.3, 8.7, 1);
+"""
 MIGRATIONS: list[tuple[int, str]] = [
     (1, _SCHEMA_V1),
+    (2, _SCHEMA_V2),
 ]
 
 

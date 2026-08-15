@@ -10,8 +10,10 @@ import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+import math
+
 from PySide6.QtCore import QSettings, QTimer
-from PySide6.QtWidgets import QApplication, QMessageBox
+from PySide6.QtWidgets import QApplication, QComboBox, QMessageBox, QTableWidgetItem
 
 # 界面偏好隔离到临时 ini，避免污染真实用户设置
 QSettings.setDefaultFormat(QSettings.IniFormat)
@@ -127,7 +129,55 @@ def main() -> int:
     prefs.set_last_dir(tempfile.gettempdir())
     assert prefs.last_dir() == tempfile.gettempdir()
 
-    print("SMOKE OK：录入/保存/统计/Weibull/报告导出/历史明细/日志/偏好 全部通过")
+    # 7. 表面能模块：OWRK 计算保存 + 报告导出
+    st = win.surface_tab
+    st._radio_methods["owrk"].setChecked(True)
+    st._edit_sample_name.setText("冒烟-PTFE")
+    st._add_row()
+    st._table.cellWidget(0, 0).setCurrentText("水")    # 从液体库选择 → 自动填充 γ 参数
+    assert st._table.item(0, 1).text() == "72.8"
+    st._table.item(0, 4).setText("108")
+    st._add_row()
+    st._table.cellWidget(1, 0).setCurrentText("二碘甲烷")
+    st._table.item(1, 4).setText("77")
+    st._save()
+    assert st._history.rowCount() == 1
+    assert st._lbl_gt.text().startswith("总表面能 γ_S：19.50"), st._lbl_gt.text()
+    assert st._per_table.rowCount() == 2
+
+    from fiber_tensile.surface_energy.exporters import (
+        export_excel_report as se_xlsx, export_pdf_report as se_pdf)
+    from fiber_tensile.surface_energy.repository import get_measurement
+    mid = st._history_rows[0]["id"]
+    row, points = get_measurement(conn, mid)
+    se_path = os.path.join(tempfile.gettempdir(), "smoke_se.xlsx")
+    se_pdf_path = os.path.join(tempfile.gettempdir(), "smoke_se.pdf")
+    se_xlsx(se_path, row["sample_name"], row["method"], points)
+    se_pdf(se_pdf_path, row["sample_name"], row["method"], points)
+    assert os.path.getsize(se_path) > 1000
+    assert open(se_pdf_path, "rb").read(5) == b"%PDF-"
+
+    # 8. Zisman 法：γ_c 与拟合图（图包含临界表面张力标注）
+    st._radio_methods["zisman"].setChecked(True)
+    st._table.setRowCount(0)
+    for gamma_l, cos_t in ((30.0, 0.8), (50.0, 0.4), (70.0, 0.0)):
+        r = st._table.rowCount()
+        st._table.insertRow(r)
+        combo = QComboBox()
+        combo.setEditable(True)
+        combo.addItems([l["name"] for l in st._liquid_library()])
+        st._table.setCellWidget(r, 0, combo)
+        st._table.setItem(r, 1, QTableWidgetItem(f"{gamma_l:g}"))
+        st._table.setItem(r, 2, QTableWidgetItem(""))
+        st._table.setItem(r, 3, QTableWidgetItem(""))
+        st._table.setItem(r, 4, QTableWidgetItem(f"{math.degrees(math.acos(cos_t)):g}"))
+    st._save()
+    assert st._history.rowCount() == 2
+    assert "20.00" in st._lbl_gc.text(), st._lbl_gc.text()
+    canvas_texts = [t.get_text() for ax in st._canvas.fig.axes for t in ax.texts]
+    assert any("临界表面张力" in t for t in canvas_texts), canvas_texts
+
+    print("SMOKE OK：录入/统计/Weibull/历史/日志/偏好/表面能(OWRK+Zisman+报告) 全部通过")
     QTimer.singleShot(300, app.quit)
     return app.exec()
 
