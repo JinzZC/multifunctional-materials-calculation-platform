@@ -58,6 +58,11 @@ def _norm(text: str) -> str:
         .replace(" ", "").replace("_", "")
 
 
+# 注册表中的显示名（如「Wu 调和平均法」）也作为方法别名自动识别
+for _key, _spec in METHODS.items():
+    _METHOD_ALIASES[_norm(_spec.label)] = _key
+
+
 _ALIAS_MAP = {_norm(a): key for key, aliases in _HEADER_ALIASES.items()
               for a in aliases}
 
