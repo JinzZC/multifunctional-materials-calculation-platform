@@ -54,7 +54,9 @@ class MainWindow(QMainWindow):
 
         # ---- 左侧模块导航栏 ----
         self._nav = QListWidget()
-        self._nav.setFixedWidth(175)
+        self._nav.setFixedWidth(190)
+        self._nav.setWordWrap(True)          # 模块名过长时自动换行，保证完整显示
+        self._nav.setUniformItemSizes(False)
         self._nav.setStyleSheet(_NAV_STYLE)
         self._nav.addItem(QListWidgetItem("纤维拉伸强度分析模块"))
         self._nav.addItem(QListWidgetItem("接触角表面能模块"))

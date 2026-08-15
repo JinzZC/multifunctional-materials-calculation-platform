@@ -14,7 +14,7 @@ from PySide6.QtCore import QDate, Qt, Signal
 from PySide6.QtWidgets import (
     QAbstractItemView, QComboBox, QDateEdit, QDoubleSpinBox, QFileDialog, QFormLayout,
     QGroupBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMessageBox, QPushButton,
-    QRadioButton, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
+    QRadioButton, QSplitter, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
 from ..core.models import Batch, Sample
@@ -46,10 +46,13 @@ class EntryTab(QWidget):
     # ---- UI 构建 ----
 
     def _build_ui(self) -> None:
-        root = QHBoxLayout(self)
+        splitter = QSplitter(Qt.Horizontal)
+        splitter.setChildrenCollapsible(False)
 
         # ===== 左侧参数区 =====
-        left = QVBoxLayout()
+        left_widget = QWidget()
+        left = QVBoxLayout(left_widget)
+        left.setContentsMargins(0, 0, 0, 0)
 
         mode_box = QGroupBox("计算模式")
         mode_layout = QHBoxLayout(mode_box)
@@ -125,10 +128,12 @@ class EntryTab(QWidget):
         left.addLayout(btn_row2)
         left.addStretch(1)
 
-        root.addLayout(left, 3)
+        splitter.addWidget(left_widget)
 
         # ===== 右侧表格区 =====
-        right = QVBoxLayout()
+        right_widget = QWidget()
+        right = QVBoxLayout(right_widget)
+        right.setContentsMargins(0, 0, 0, 0)
         right.addWidget(QLabel("当前批次数据（未保存）"))
         self._table = QTableWidget(0, 7)
         self._table.setSelectionBehavior(QAbstractItemView.SelectRows)
@@ -146,7 +151,14 @@ class EntryTab(QWidget):
         bottom.addStretch(1)
         bottom.addWidget(self._btn_save)
         right.addLayout(bottom)
-        root.addLayout(right, 4)
+        splitter.addWidget(right_widget)
+
+        splitter.setStretchFactor(0, 3)
+        splitter.setStretchFactor(1, 4)
+        splitter.setSizes([430, 700])
+        root_layout = QVBoxLayout(self)
+        root_layout.setContentsMargins(0, 0, 0, 0)
+        root_layout.addWidget(splitter)
 
     def _connect_signals(self) -> None:
         for radio in self._radio_modes.values():

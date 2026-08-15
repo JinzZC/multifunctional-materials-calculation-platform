@@ -8,8 +8,8 @@ import sqlite3
 from PySide6.QtCore import QDate, Qt, Signal
 from PySide6.QtWidgets import (
     QAbstractItemView, QCheckBox, QComboBox, QDateEdit, QHBoxLayout, QHeaderView,
-    QLabel, QLineEdit, QMessageBox, QPushButton, QTableWidget, QTableWidgetItem,
-    QVBoxLayout, QWidget,
+    QLabel, QLineEdit, QMessageBox, QPushButton, QSplitter, QTableWidget,
+    QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
 from ..core.models import MODE_FILAMENT, MODE_LABELS, MODE_TEXTILE, strength_unit_label
@@ -91,15 +91,29 @@ class HistoryTab(QWidget):
         self._batch_table.setColumnWidth(3, 70)
         self._batch_table.setColumnWidth(4, 150)
         self._batch_table.itemSelectionChanged.connect(self._on_selection_changed)
-        root.addWidget(self._batch_table, 3)
 
-        root.addWidget(QLabel("样本明细："))
+        # 批次列表与样本明细用可拖拽分隔条
+        splitter = QSplitter(Qt.Vertical)
+        splitter.setChildrenCollapsible(False)
+        batch_widget = QWidget()
+        bw_layout = QVBoxLayout(batch_widget)
+        bw_layout.setContentsMargins(0, 0, 0, 0)
+        bw_layout.addWidget(self._batch_table)
+        splitter.addWidget(batch_widget)
+
+        detail_widget = QWidget()
+        dw_layout = QVBoxLayout(detail_widget)
+        dw_layout.setContentsMargins(0, 0, 0, 0)
+        dw_layout.addWidget(QLabel("样本明细："))
         self._detail_table = QTableWidget(0, 8)
         self._detail_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self._detail_table.verticalHeader().setVisible(False)
         self._detail_table.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
         self._detail_table.horizontalHeader().setStretchLastSection(True)
-        root.addWidget(self._detail_table, 2)
+        dw_layout.addWidget(self._detail_table)
+        splitter.addWidget(detail_widget)
+        splitter.setSizes([320, 240])
+        root.addWidget(splitter, 3)
 
         buttons = QHBoxLayout()
         self._btn_compare = QPushButton("对比批次（≥2 个同模式）")

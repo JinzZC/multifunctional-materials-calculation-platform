@@ -8,7 +8,7 @@ import sqlite3
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (
     QComboBox, QFileDialog, QGroupBox, QHBoxLayout, QHeaderView, QLabel, QMessageBox,
-    QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
+    QPushButton, QSplitter, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
 from ..core.models import MODE_LABELS, Batch
@@ -90,7 +90,8 @@ class AnalysisTab(QWidget):
         top.addStretch(1)
         root.addLayout(top)
 
-        middle = QHBoxLayout()
+        middle = QSplitter(Qt.Horizontal)
+        middle.setChildrenCollapsible(False)
 
         stats_group = QGroupBox("统计结果")
         stats_layout = QVBoxLayout(stats_group)
@@ -100,7 +101,7 @@ class AnalysisTab(QWidget):
         self._stats_table.horizontalHeader().setVisible(False)
         self._stats_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         stats_layout.addWidget(self._stats_table, 1)
-        middle.addWidget(stats_group, 2)
+        middle.addWidget(stats_group)
 
         weibull_group = QGroupBox("Weibull 分布分析")
         w_layout = QVBoxLayout(weibull_group)
@@ -117,9 +118,12 @@ class AnalysisTab(QWidget):
         self._canvas_placeholder.setAlignment(Qt.AlignCenter)
         self._canvas_placeholder.setStyleSheet("color: #888;")
         w_layout.addWidget(self._canvas_placeholder, 1)
-        middle.addWidget(weibull_group, 3)
+        middle.addWidget(weibull_group)
 
-        root.addLayout(middle, 1)
+        middle.setStretchFactor(0, 2)
+        middle.setStretchFactor(1, 3)
+        middle.setSizes([330, 660])
+        root.addWidget(middle, 1)
 
         bottom = QHBoxLayout()
         self._btn_excel = QPushButton("导出 Excel 报告…")

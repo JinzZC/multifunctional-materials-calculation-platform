@@ -195,7 +195,7 @@ def compute_wu(points: list) -> SurfaceEnergyResult:
     seed = compute_owrk(points)   # OWRK 解作迭代初值
     steps = [f"计算过程（Wu 调和平均法，{len(points)} 种液体）",
              "调和平均方程组（每液体一个方程）：γ_L×(1+cosθ) "
-             "= 4×γ_S^d×γ_L^d÷(γ_S^d+γ_L^d) + 4×γ_S^p×γ_L^p÷(γ_S^p+γ_L^p)",
+             "= 4×⟨γ_S^d×γ_L^d|γ_S^d+γ_L^d⟩ + 4×⟨γ_S^p×γ_L^p|γ_S^p+γ_L^p⟩",
              f"① 以 OWRK 解为迭代初值：γ_S^d = {seed.gamma_d:.4f}，"
              f"γ_S^p = {seed.gamma_p:.4f}"]
 
@@ -271,7 +271,7 @@ def compute_wu(points: list) -> SurfaceEnergyResult:
     steps.append(f"⑥ 拟合优度 R² = {r2:.4f}")
     per = _per_liquid_harmonic(points, gamma_d, gamma_p)
     steps.append("⑦ 各液体的界面能与粘附功（γ_SL = γ_S + γ_L "
-                 "− 4×γ_S^d×γ_L^d÷(γ_S^d+γ_L^d) − 4×γ_S^p×γ_L^p÷(γ_S^p+γ_L^p)，"
+                 "− 4×⟨γ_S^d×γ_L^d|γ_S^d+γ_L^d⟩ − 4×⟨γ_S^p×γ_L^p|γ_S^p+γ_L^p⟩，"
                  "W_A = γ_L×(1+cosθ)）：")
     steps += _steps_per_liquid(points, per)
     return SurfaceEnergyResult(
@@ -289,10 +289,10 @@ def compute_fowkes(points: list) -> SurfaceEnergyResult:
         raise ValueError(f"Fowkes 法需要液体的 γ^d 分量（液体「{p.liquid_name}」缺失）")
     wa = _wa(p)
     steps = ["计算过程（Fowkes 法）",
-             "公式：γ_S^d = [γ_L×(1+cosθ)]² ÷ (4×γ_L^d)",
+             "公式：γ_S^d = ⟨[γ_L×(1+cosθ)]²|4×γ_L^d⟩",
              f"① γ_L×(1+cosθ) = {p.gamma_total:g}×(1+cos{p.angle_deg:g}°)"
              f" = {wa:.4f}",
-             f"② γ_S^d = {wa:.4f}² ÷ (4×{p.gamma_d:g}) = "
+             f"② γ_S^d = ⟨{wa:.4f}²|4×{p.gamma_d:g}⟩ = "
              f"{wa ** 2 / (4.0 * p.gamma_d):.4f} mN/m",
              f"③ 总表面能：γ_S ≈ γ_S^d = {wa ** 2 / (4.0 * p.gamma_d):.2f} mN/m"
              "（Fowkes 法仅计算色散分量）"]
@@ -321,7 +321,7 @@ def compute_zisman(points: list) -> SurfaceEnergyResult:
         steps.append("   斜率接近 0 → 无法外推")
         raise ValueError("拟合斜率接近 0，无法外推临界表面张力（请检查接触角数据）")
     gamma_c = (1.0 - intercept) / slope
-    steps.append(f"③ 临界表面张力：γ_c = (1 − ({intercept:.4f})) ÷ ({slope:.4f}) "
+    steps.append(f"③ 临界表面张力：γ_c = ⟨1 − {intercept:.4f}|{slope:.4f}⟩ "
                  f"= {gamma_c:.2f} mN/m")
     r2 = float(np.corrcoef(x, y)[0, 1] ** 2)
     steps.append(f"④ 拟合优度 R² = {r2:.4f}")
@@ -349,18 +349,19 @@ METHODS: dict[str, MethodSpec] = {
         key=METHOD_WU, label="Wu 调和平均法", min_points=2, max_points=None,
         needs_gamma_d=True, needs_gamma_p=True,
         hint="需 ≥2 种液体，调和平均公式，适合低能表面",
-        equations=("γ_L×(1+cosθ) = 4×γ_S^d×γ_L^d÷(γ_S^d+γ_L^d)"
-                   " + 4×γ_S^p×γ_L^p÷(γ_S^p+γ_L^p)\n"
+        # ⟨分子|分母⟩ 记号由界面渲染为分数形式
+        equations=("γ_L×(1+cosθ) = 4×⟨γ_S^d×γ_L^d|γ_S^d+γ_L^d⟩"
+                   " + 4×⟨γ_S^p×γ_L^p|γ_S^p+γ_L^p⟩\n"
                    "γ_S = γ_S^d + γ_S^p\n"
-                   "γ_SL = γ_S + γ_L − 4×γ_S^d×γ_L^d÷(γ_S^d+γ_L^d)"
-                   " − 4×γ_S^p×γ_L^p÷(γ_S^p+γ_L^p)\n"
+                   "γ_SL = γ_S + γ_L − 4×⟨γ_S^d×γ_L^d|γ_S^d+γ_L^d⟩"
+                   " − 4×⟨γ_S^p×γ_L^p|γ_S^p+γ_L^p⟩\n"
                    "W_A = γ_L×(1+cosθ)"),
         compute=compute_wu),
     METHOD_FOWKES: MethodSpec(
         key=METHOD_FOWKES, label="Fowkes 法", min_points=1, max_points=1,
         needs_gamma_d=True, needs_gamma_p=False,
         hint="仅 1 种非极性液体，只能计算色散分量",
-        equations=("γ_S^d = [γ_L×(1+cosθ)]² ÷ (4×γ_L^d)\n"
+        equations=("γ_S^d = ⟨[γ_L×(1+cosθ)]²|4×γ_L^d⟩\n"
                    "γ_S ≈ γ_S^d\n"
                    "W_A = γ_L×(1+cosθ)"),
         compute=compute_fowkes),
@@ -369,7 +370,7 @@ METHODS: dict[str, MethodSpec] = {
         needs_gamma_d=False, needs_gamma_p=False,
         hint="同系列液体（建议 ≥3 种），外推临界表面张力",
         equations=("cosθ = m×γ_L + b\n"
-                   "γ_c = (1 − b) ÷ m\n"
+                   "γ_c = ⟨1 − b|m⟩\n"
                    "W_A = γ_L×(1+cosθ)"),
         compute=compute_zisman),
 }

@@ -137,6 +137,11 @@ def main() -> int:
     eq = st._lbl_equations.text()
     assert "<sub>S</sub>" in eq and "cosθ" in eq and "符号说明" in eq, eq
     assert st._table.horizontalHeaderItem(1).text() == "接触角 θ（度）"
+    # Wu 法除号以分子/分母分数形式展示（分数线为 border-top）
+    st._radio_methods["wu"].setChecked(True)
+    eq_wu = st._lbl_equations.text()
+    assert "border-top" in eq_wu and "<sub>S</sub>" in eq_wu, eq_wu
+    st._radio_methods["owrk"].setChecked(True)
     assert "色散分量" in st._table.horizontalHeaderItem(3).text()
     assert "色散分量" in st._history.horizontalHeaderItem(2).text()
     st._edit_sample_name.setText("冒烟-PTFE")
@@ -193,11 +198,16 @@ def main() -> int:
     assert any("临界表面张力" in t for t in canvas_texts), canvas_texts
     assert "直线拟合" in st._txt_process.toPlainText()
 
-    # 9. 模块导航栏：两个模块可切换并记忆
+    # 9. 模块导航栏：两个模块可切换并记忆，模块名过长自动换行
     assert win._nav.count() == 2
     assert win._nav.item(0).text() == "纤维拉伸强度分析模块"
     assert win._nav.item(1).text() == "接触角表面能模块"
     assert "多功能计算平台" in win.windowTitle()
+    assert win._nav.wordWrap() is True
+    # 各模块界面区块之间有可拖拽分隔条（QSplitter）
+    from PySide6.QtWidgets import QSplitter
+    for tab in (win.entry_tab, win.analysis_tab, win.history_tab, win.surface_tab):
+        assert tab.findChild(QSplitter) is not None, type(tab).__name__
     win._nav.setCurrentRow(1)
     assert win._stack.currentIndex() == 1
     win._nav.setCurrentRow(0)

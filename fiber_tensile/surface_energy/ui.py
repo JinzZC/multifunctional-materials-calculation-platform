@@ -22,7 +22,7 @@ from PySide6.QtWidgets import (
     QAbstractItemView, QComboBox, QDateEdit, QDialog, QDialogButtonBox,
     QDoubleSpinBox, QFileDialog, QFormLayout, QGroupBox, QHBoxLayout, QHeaderView,
     QLabel, QLineEdit, QMessageBox, QPushButton, QRadioButton, QScrollArea,
-    QTableWidget, QTableWidgetItem, QTextEdit, QVBoxLayout, QWidget,
+    QSplitter, QTableWidget, QTableWidgetItem, QTextEdit, QVBoxLayout, QWidget,
 )
 
 from ..fileio.importer import ImportFileError
@@ -40,7 +40,7 @@ logger = logging.getLogger(__name__)
 # 表格列：接触角紧随液体名称、高亮显示，其余参数由液体库自动填充
 COL_NAME, COL_ANGLE, COL_GAMMA, COL_GD, COL_GP = range(5)
 
-# 符号记号（γ_S^d 等）→ Qt 富文本真上下标，公式以规范数学形式显示
+# 符号记号（γ_S^d 等）→ Qt 富文本真上下标；⟨分子|分母⟩ → 分数形式
 _RICH_RULES = [
     (re.compile(r"γ_([SLc])\^([dp])"), r"γ<sub>\1</sub><sup>\2</sup>"),
     (re.compile(r"W_A"), "W<sub>A</sub>"),
@@ -48,6 +48,7 @@ _RICH_RULES = [
     (re.compile(r"γ_([SLc])"), r"γ<sub>\1</sub>"),
     (re.compile(r"\^([dp])"), r"<sup>\1</sup>"),
 ]
+_FRAC_RE = re.compile(r"⟨([^|⟩]*)\|([^⟩]*)⟩")
 
 _SYMBOL_LEGEND = (
     '<span style="color:#888; font-size:8.5pt;">符号说明：γ＝表面张力/表面能；'
@@ -55,11 +56,48 @@ _SYMBOL_LEGEND = (
     "θ＝接触角；W<sub>A</sub>＝粘附功；mN/m 为常用单位</span>")
 
 
-def to_rich(text: str) -> str:
-    """把 γ_S^d 等记号转为 Qt 富文本上下标（HTML）。"""
+def _apply_symbols(text: str) -> str:
+    """上下标记号 → 富文本（不处理分数）。"""
     for pattern, repl in _RICH_RULES:
         text = pattern.sub(repl, text)
     return text
+
+
+def _fraction_html(num: str, den: str) -> str:
+    """分子/分母形式的分数（嵌套表格 + 上边框分数线）。"""
+    return (
+        '<table border="0" cellspacing="0" cellpadding="0">'
+        f'<tr><td align="center" style="padding:0 3px">{_apply_symbols(num)}</td></tr>'
+        '<tr><td style="border-top:1px solid #333; padding:0 3px"></td></tr>'
+        f'<tr><td align="center" style="padding:0 3px">{_apply_symbols(den)}</td></tr>'
+        '</table>')
+
+
+def to_rich(text: str) -> str:
+    """⟨分子|分母⟩ → 分数表格；γ_S^d 等记号 → 真上下标。"""
+    parts = _FRAC_RE.split(text)
+    out = []
+    for i in range(0, len(parts), 3):
+        if parts[i]:
+            out.append(_apply_symbols(parts[i]))
+        if i + 2 < len(parts):
+            out.append(_fraction_html(parts[i + 1], parts[i + 2]))
+    return "".join(out)
+
+
+def _equation_line_html(line: str) -> str:
+    """一条公式 → 单行表格：文本段与分数段交替、垂直居中对齐。"""
+    parts = _FRAC_RE.split(line)
+    cells = []
+    for i in range(0, len(parts), 3):
+        if parts[i]:
+            cells.append(f'<td valign="middle" style="padding:0 3px">'
+                         f"{_apply_symbols(parts[i])}</td>")
+        if i + 2 < len(parts):
+            cells.append(f'<td valign="middle" style="padding:0 3px">'
+                         f"{_fraction_html(parts[i + 1], parts[i + 2])}</td>")
+    return ('<table border="0" cellspacing="0" cellpadding="0"><tr>'
+            + "".join(cells) + "</tr></table>")
 
 
 class SurfaceEnergyTab(QWidget):
@@ -166,10 +204,24 @@ class SurfaceEnergyTab(QWidget):
         self._table.setColumnWidth(COL_NAME, 140)
         self._table.setColumnWidth(COL_ANGLE, 110)
         self._table.setMinimumHeight(150)
-        root.addWidget(self._table, 2)
 
-        # ---- ④ 计算结果 + 计算过程（并排，各占半宽）----
-        result_row = QHBoxLayout()
+        # ---- ③④⑤ 三个区块用可拖拽分隔条连接 ----
+        splitter = QSplitter(Qt.Vertical)
+        splitter.setChildrenCollapsible(False)
+
+        liquid_widget = QWidget()
+        lw_layout = QVBoxLayout(liquid_widget)
+        lw_layout.setContentsMargins(0, 0, 0, 0)
+        lw_layout.addLayout(liquid_header)
+        lw_layout.addWidget(self._table)
+        splitter.addWidget(liquid_widget)
+
+        # ---- ④ 计算结果 + 计算过程（并排，分隔条可拖拽调宽）----
+        result_widget = QWidget()
+        rw_layout = QVBoxLayout(result_widget)
+        rw_layout.setContentsMargins(0, 0, 0, 0)
+        result_row = QSplitter(Qt.Horizontal)
+        result_row.setChildrenCollapsible(False)
 
         result_box = QGroupBox("④ 计算结果")
         r_layout = QVBoxLayout(result_box)
@@ -197,7 +249,7 @@ class SurfaceEnergyTab(QWidget):
         f_layout.addWidget(self._canvas_placeholder)
         self._figure_container.setVisible(False)
         r_layout.addWidget(self._figure_container)
-        result_row.addWidget(result_box, 1)
+        result_row.addWidget(result_box)
 
         process_box = QGroupBox("计算过程")
         p_layout = QVBoxLayout(process_box)
@@ -207,11 +259,16 @@ class SurfaceEnergyTab(QWidget):
         self._txt_process.setStyleSheet(
             "font-family: Consolas, 'Microsoft YaHei'; font-size: 9.5pt;")
         p_layout.addWidget(self._txt_process)
-        result_row.addWidget(process_box, 1)
-        root.addLayout(result_row, 2)
+        result_row.addWidget(process_box)
+        result_row.setSizes([520, 520])
+        rw_layout.addWidget(result_row)
+        splitter.addWidget(result_widget)
 
         # ---- ⑤ 历史记录 ----
-        root.addWidget(QLabel("⑤ 历史记录："))
+        hist_widget = QWidget()
+        hw_layout = QVBoxLayout(hist_widget)
+        hw_layout.setContentsMargins(0, 0, 0, 0)
+        hw_layout.addWidget(QLabel("⑤ 历史记录："))
         self._history = QTableWidget(0, 8)
         self._history.setHorizontalHeaderLabels(
             ["样品名称", "方法", "γ^d（色散分量, mN/m）", "γ^p（极性分量, mN/m）",
@@ -224,8 +281,7 @@ class SurfaceEnergyTab(QWidget):
         self._history.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
         self._history.horizontalHeader().setStretchLastSection(True)
         self._history.setColumnWidth(0, 180)
-        root.addWidget(self._history, 2)
-
+        hw_layout.addWidget(self._history)
         h_buttons = QHBoxLayout()
         self._btn_delete_hist = QPushButton("删除记录")
         self._btn_export_xlsx = QPushButton("导出 Excel 报告…")
@@ -233,7 +289,11 @@ class SurfaceEnergyTab(QWidget):
         for b in (self._btn_delete_hist, self._btn_export_xlsx, self._btn_export_pdf):
             h_buttons.addWidget(b)
         h_buttons.addStretch(1)
-        root.addLayout(h_buttons)
+        hw_layout.addLayout(h_buttons)
+        splitter.addWidget(hist_widget)
+
+        splitter.setSizes([230, 300, 230])
+        root.addWidget(splitter, 1)
 
     def _connect_signals(self) -> None:
         for radio in self._radio_methods.values():
@@ -259,8 +319,9 @@ class SurfaceEnergyTab(QWidget):
     def _on_method_changed(self, *args) -> None:
         spec = get_method_spec(self._method())
         self._lbl_hint.setText(f"{spec.label}：{spec.hint}")
-        # 公式以规范数学形式展示（真上下标），符号说明单独一行
-        equations_html = "<br>".join(to_rich(line) for line in spec.equations.split("\n"))
+        # 公式以规范数学形式展示（真上下标、分数形式），符号说明单独一行
+        equations_html = "<br>".join(
+            _equation_line_html(line) for line in spec.equations.split("\n"))
         self._lbl_equations.setText(equations_html + "<br>" + _SYMBOL_LEGEND)
         self._figure_container.setVisible(self._method() == "zisman")
 
