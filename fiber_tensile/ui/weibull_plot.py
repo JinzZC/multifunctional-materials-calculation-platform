@@ -1,7 +1,7 @@
 """嵌入 PySide6 的 matplotlib 画布（qtagg 后端）。"""
 
 from PySide6.QtCore import Qt
-from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg
+from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg, NavigationToolbar2QT
 from matplotlib.figure import Figure
 
 from ..plotting import build_weibull_figure
@@ -27,6 +27,37 @@ def localize_toolbar(toolbar) -> None:
             action.setText(text)
             action.setToolTip(tip)
     toolbar.setToolButtonStyle(Qt.ToolButtonTextBesideIcon)
+
+
+class ChineseNavigationToolbar(NavigationToolbar2QT):
+    """中文化的导航工具栏：按钮文字由 localize_toolbar 处理，
+    「子图」与「设置」两个对话框替换为中文版（ui/plot_dialogs.py）。"""
+
+    def configure_subplots(self):
+        from .plot_dialogs import SubplotDialog
+
+        if not self.canvas.figure.axes:
+            return
+        SubplotDialog(self.canvas.figure, self.parentWidget()).exec()
+
+    def edit_parameters(self):
+        from PySide6.QtWidgets import QInputDialog
+
+        from .plot_dialogs import AxesEditDialog
+
+        axes = self.canvas.figure.axes
+        if not axes:
+            return
+        if len(axes) == 1:
+            ax = axes[0]
+        else:
+            titles = [f"第 {i + 1} 个子图" for i in range(len(axes))]
+            item, ok = QInputDialog.getItem(
+                self.parentWidget(), "选择要编辑的子图", "子图：", titles, 0, False)
+            if not ok:
+                return
+            ax = axes[titles.index(item)]
+        AxesEditDialog(ax, self.parentWidget()).exec()
 
 
 class MplCanvas(FigureCanvasQTAgg):

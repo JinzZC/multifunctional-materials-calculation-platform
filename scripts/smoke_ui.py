@@ -89,6 +89,16 @@ def main() -> int:
     # 图形操作工具栏按钮已中文化
     toolbar_texts = [a.text() for a in ana._toolbar.actions() if a.text()]
     assert "复位" in toolbar_texts and "保存图像" in toolbar_texts, toolbar_texts
+    # 「子图」与「设置」使用中文对话框
+    from fiber_tensile.ui.weibull_plot import ChineseNavigationToolbar
+    assert isinstance(ana._toolbar, ChineseNavigationToolbar)
+    from fiber_tensile.ui.plot_dialogs import AxesEditDialog, SubplotDialog
+    dlg = SubplotDialog(ana._canvas.fig)
+    assert dlg.windowTitle() == "子图布局设置" and len(dlg._spins) == 6
+    dlg.close()
+    dlg2 = AxesEditDialog(ana._canvas.fig.axes[0])
+    assert dlg2.windowTitle() == "图形设置"
+    dlg2.close()
 
     # 4. 导出两种报告（走与 UI 按钮相同的底层函数）
     batch = get_batch(conn, batches[0].id)

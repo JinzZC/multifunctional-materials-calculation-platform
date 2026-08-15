@@ -166,12 +166,10 @@ class AnalysisTab(QWidget):
         """首次需要绘图时才创建 matplotlib 画布（延迟加载 matplotlib）。"""
         if self._canvas is not None:
             return
-        from matplotlib.backends.backend_qtagg import NavigationToolbar2QT
-
-        from .weibull_plot import MplCanvas, localize_toolbar
+        from .weibull_plot import ChineseNavigationToolbar, MplCanvas, localize_toolbar
 
         self._canvas = MplCanvas()
-        self._toolbar = NavigationToolbar2QT(self._canvas, self)
+        self._toolbar = ChineseNavigationToolbar(self._canvas, self)
         localize_toolbar(self._toolbar)
         idx = self._weibull_layout.indexOf(self._canvas_placeholder)
         self._weibull_layout.removeWidget(self._canvas_placeholder)

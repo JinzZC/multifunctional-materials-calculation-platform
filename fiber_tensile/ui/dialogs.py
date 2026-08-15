@@ -188,9 +188,7 @@ class CompareDialog(QDialog):
 
     def __init__(self, payload: list, parent: QWidget | None = None):
         # 延迟导入 matplotlib：只在打开对比窗口时加载
-        from matplotlib.backends.backend_qtagg import NavigationToolbar2QT
-
-        from .weibull_plot import MplCanvas, localize_toolbar
+        from .weibull_plot import ChineseNavigationToolbar, MplCanvas, localize_toolbar
 
         super().__init__(parent)
         self.setWindowTitle("批次对比")
@@ -224,7 +222,7 @@ class CompareDialog(QDialog):
             canvas = MplCanvas()
             canvas.draw_weibull(series, labels=labels, title="Weibull 分布对比图",
                                 sigma0_unit=unit)
-            toolbar = NavigationToolbar2QT(canvas, self)
+            toolbar = ChineseNavigationToolbar(canvas, self)
             localize_toolbar(toolbar)
             layout.addWidget(toolbar)
             layout.addWidget(canvas, 1)
