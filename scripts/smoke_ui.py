@@ -177,7 +177,19 @@ def main() -> int:
     canvas_texts = [t.get_text() for ax in st._canvas.fig.axes for t in ax.texts]
     assert any("临界表面张力" in t for t in canvas_texts), canvas_texts
 
-    print("SMOKE OK：录入/统计/Weibull/历史/日志/偏好/表面能(OWRK+Zisman+报告) 全部通过")
+    # 9. 模块导航栏：两个模块可切换并记忆
+    assert win._nav.count() == 2
+    assert win._nav.item(0).text() == "纤维拉伸强度"
+    assert win._nav.item(1).text() == "表面能"
+    win._nav.setCurrentRow(1)
+    assert win._stack.currentIndex() == 1
+    win._nav.setCurrentRow(0)
+    assert win._stack.currentIndex() == 0
+    from fiber_tensile.ui import prefs
+    prefs.set_last_module(1)
+    assert prefs.last_module() == 1
+
+    print("SMOKE OK：录入/统计/Weibull/历史/日志/偏好/表面能/模块导航 全部通过")
     QTimer.singleShot(300, app.quit)
     return app.exec()
 

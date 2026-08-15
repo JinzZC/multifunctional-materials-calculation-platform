@@ -1,9 +1,19 @@
-"""主窗口：菜单栏、状态栏与三个功能 Tab 的装配。"""
+"""主窗口：左侧模块导航栏 + 堆叠页面。
+
+模块结构：
+    ├── 纤维拉伸强度（内部子页签：①数据录入 ②统计分析 ③历史记录）
+    └── 表面能（OWRK/Wu/Fowkes/Zisman）
+
+新增功能域（如 EMI）时在导航栏加一项、堆叠区加一页即可。
+"""
 
 import sqlite3
 
 from PySide6.QtGui import QAction
-from PySide6.QtWidgets import QMainWindow, QTabWidget
+from PySide6.QtWidgets import (
+    QHBoxLayout, QListWidget, QListWidgetItem, QMainWindow, QStackedWidget,
+    QTabWidget, QVBoxLayout, QWidget,
+)
 
 from ..config import APP_NAME, APP_VERSION, default_db_path
 from ..surface_energy.ui import SurfaceEnergyTab
@@ -12,28 +22,75 @@ from .analysis_tab import AnalysisTab
 from .entry_tab import EntryTab
 from .history_tab import HistoryTab
 
+_NAV_STYLE = """
+QListWidget {
+    border: 1px solid #C9D7E8; border-radius: 6px;
+    background: #F7FAFD; font-size: 12pt; padding: 4px;
+}
+QListWidget::item {
+    padding: 12px 8px; border-radius: 4px; color: #1F4E79;
+}
+QListWidget::item:selected {
+    background: #1F4E79; color: white;
+}
+QListWidget::item:hover:!selected { background: #DDEBF7; }
+"""
+
 
 class MainWindow(QMainWindow):
     def __init__(self, conn: sqlite3.Connection, parent=None):
         super().__init__(parent)
         self._conn = conn
         self.setWindowTitle(f"{APP_NAME} v{APP_VERSION}")
-        self.resize(1100, 760)
+        self.resize(1180, 780)
         geometry = prefs.load_geometry()
         if geometry is not None:
             self.restoreGeometry(geometry)
 
-        self._tabs = QTabWidget()
+        central = QWidget()
+        root = QHBoxLayout(central)
+        root.setContentsMargins(8, 8, 8, 8)
+        root.setSpacing(8)
+
+        # ---- 左侧模块导航栏 ----
+        self._nav = QListWidget()
+        self._nav.setFixedWidth(150)
+        self._nav.setStyleSheet(_NAV_STYLE)
+        self._nav.addItem(QListWidgetItem("纤维拉伸强度"))
+        self._nav.addItem(QListWidgetItem("表面能"))
+        self._nav.item(0).setToolTip("单丝/纺织纤维强度计算、统计与 Weibull 分析")
+        self._nav.item(1).setToolTip("OWRK/Wu/Fowkes/Zisman 表面能计算")
+        root.addWidget(self._nav)
+
+        # ---- 右侧堆叠页面 ----
+        self._stack = QStackedWidget()
+
+        # 模块一：纤维拉伸强度（内部三个子页签）
+        fiber_page = QWidget()
+        f_layout = QVBoxLayout(fiber_page)
+        f_layout.setContentsMargins(0, 0, 0, 0)
+        fiber_tabs = QTabWidget()
         self.entry_tab = EntryTab(conn)
         self.analysis_tab = AnalysisTab(conn)
         self.history_tab = HistoryTab(conn)
-        self.surface_tab = SurfaceEnergyTab(conn)
         self.analysis_tab.set_entry_tab(self.entry_tab)
-        self._tabs.addTab(self.entry_tab, "① 数据录入")
-        self._tabs.addTab(self.analysis_tab, "② 统计分析")
-        self._tabs.addTab(self.history_tab, "③ 历史记录")
-        self._tabs.addTab(self.surface_tab, "④ 表面能")
-        self.setCentralWidget(self._tabs)
+        fiber_tabs.addTab(self.entry_tab, "① 数据录入")
+        fiber_tabs.addTab(self.analysis_tab, "② 统计分析")
+        fiber_tabs.addTab(self.history_tab, "③ 历史记录")
+        f_layout.addWidget(fiber_tabs)
+        self._stack.addWidget(fiber_page)
+
+        # 模块二：表面能
+        self.surface_tab = SurfaceEnergyTab(conn)
+        self._stack.addWidget(self.surface_tab)
+
+        root.addWidget(self._stack, 1)
+        self.setCentralWidget(central)
+
+        # 导航切换 + 记忆上次使用的模块
+        self._nav.currentRowChanged.connect(self._stack.setCurrentIndex)
+        saved = prefs.last_module()
+        self._nav.setCurrentRow(saved if 0 <= saved < self._nav.count() else 0)
 
         self._build_menu()
         self.statusBar().showMessage(f"数据库：{default_db_path()}")
@@ -59,10 +116,11 @@ class MainWindow(QMainWindow):
         QMessageBox.about(
             self, "关于",
             f"<b>{APP_NAME} v{APP_VERSION}</b><br><br>"
-            "计算单根纤维的最大拉伸强度：<br>"
-            "· 单丝模式：σ = 4F/(πd²)（GB/T 31290）<br>"
-            "· 纺织模式：断裂强度 = F/线密度（GB/T 14337）<br><br>"
-            "支持批量统计、Weibull 分布分析、Excel/PDF 报告导出。")
+            "功能模块：<br>"
+            "· 纤维拉伸强度：σ = 4F/(πd²) 单丝模式（GB/T 31290）、"
+            "断裂强度 = F/线密度 纺织模式（GB/T 14337）、Weibull 分析<br>"
+            "· 表面能：OWRK 双液法 / Wu 调和平均法 / Fowkes 法 / Zisman 法<br><br>"
+            "支持批量导入、Excel/PDF 报告导出。")
 
     def _on_data_saved(self, batch_id: int) -> None:
         self._refresh_analysis_and_history()
@@ -76,4 +134,5 @@ class MainWindow(QMainWindow):
 
     def closeEvent(self, event) -> None:
         prefs.save_geometry(self.saveGeometry())
+        prefs.set_last_module(self._nav.currentRow())
         super().closeEvent(event)

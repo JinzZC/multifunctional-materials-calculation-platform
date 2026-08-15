@@ -125,7 +125,15 @@ class SurfaceEnergyTab(QWidget):
         root.addLayout(left, 3)
 
         right = QVBoxLayout()
-        right.addWidget(QLabel("液体数据（液体名称可从参数库选择自动填充，θ 为接触角）："))
+        # 液体数据表：行操作按钮放在表格标题旁
+        liquid_header = QHBoxLayout()
+        liquid_header.addWidget(QLabel("液体数据（液体名称可从参数库选择自动填充，θ 为接触角）："))
+        liquid_header.addStretch(1)
+        self._btn_add_row = QPushButton("添加行")
+        self._btn_delete_row = QPushButton("删除选中行")
+        liquid_header.addWidget(self._btn_add_row)
+        liquid_header.addWidget(self._btn_delete_row)
+        right.addLayout(liquid_header)
         self._table = QTableWidget(0, 5)
         self._table.setHorizontalHeaderLabels(
             ["液体名称", "γ_L(mN/m)", "γ^d(mN/m)", "γ^p(mN/m)", "接触角(°)"])
@@ -148,14 +156,12 @@ class SurfaceEnergyTab(QWidget):
         self._history.setColumnWidth(0, 180)
         right.addWidget(self._history, 3)
 
+        # 历史记录操作按钮
         h_buttons = QHBoxLayout()
-        self._btn_add_row = QPushButton("添加行")
-        self._btn_delete_row = QPushButton("删除选中行")
         self._btn_delete_hist = QPushButton("删除记录")
         self._btn_export_xlsx = QPushButton("导出 Excel 报告…")
         self._btn_export_pdf = QPushButton("导出 PDF 报告…")
-        for b in (self._btn_add_row, self._btn_delete_row, self._btn_delete_hist,
-                  self._btn_export_xlsx, self._btn_export_pdf):
+        for b in (self._btn_delete_hist, self._btn_export_xlsx, self._btn_export_pdf):
             h_buttons.addWidget(b)
         right.addLayout(h_buttons)
 

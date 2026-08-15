@@ -40,3 +40,15 @@ def default_force_unit() -> str:
 def set_default_force_unit(unit: str) -> None:
     if unit in _VALID_UNITS:
         _settings().setValue("entry/default_force_unit", unit)
+
+
+def last_module() -> int:
+    """上次使用的功能模块索引（导航栏），默认 0（纤维拉伸强度）。"""
+    try:
+        return int(_settings().value("nav/module", 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+def set_last_module(index: int) -> None:
+    _settings().setValue("nav/module", index)
