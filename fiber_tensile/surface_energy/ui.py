@@ -16,11 +16,13 @@ import sqlite3
 
 from PySide6.QtCore import QDate, Qt
 from PySide6.QtGui import QColor, QFont
+import re
+
 from PySide6.QtWidgets import (
     QAbstractItemView, QComboBox, QDateEdit, QDialog, QDialogButtonBox,
     QDoubleSpinBox, QFileDialog, QFormLayout, QGroupBox, QHBoxLayout, QHeaderView,
-    QLabel, QLineEdit, QMessageBox, QPlainTextEdit, QPushButton, QRadioButton,
-    QScrollArea, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
+    QLabel, QLineEdit, QMessageBox, QPushButton, QRadioButton, QScrollArea,
+    QTableWidget, QTableWidgetItem, QTextEdit, QVBoxLayout, QWidget,
 )
 
 from ..fileio.importer import ImportFileError
@@ -37,6 +39,27 @@ logger = logging.getLogger(__name__)
 
 # 表格列：接触角紧随液体名称、高亮显示，其余参数由液体库自动填充
 COL_NAME, COL_ANGLE, COL_GAMMA, COL_GD, COL_GP = range(5)
+
+# 符号记号（γ_S^d 等）→ Qt 富文本真上下标，公式以规范数学形式显示
+_RICH_RULES = [
+    (re.compile(r"γ_([SLc])\^([dp])"), r"γ<sub>\1</sub><sup>\2</sup>"),
+    (re.compile(r"W_A"), "W<sub>A</sub>"),
+    (re.compile(r"γ_SL"), "γ<sub>SL</sub>"),
+    (re.compile(r"γ_([SLc])"), r"γ<sub>\1</sub>"),
+    (re.compile(r"\^([dp])"), r"<sup>\1</sup>"),
+]
+
+_SYMBOL_LEGEND = (
+    '<span style="color:#888; font-size:8.5pt;">符号说明：γ＝表面张力/表面能；'
+    "下标 S＝固体、L＝液体、SL＝固液界面；上标 d＝色散分量、p＝极性分量；"
+    "θ＝接触角；W<sub>A</sub>＝粘附功；mN/m 为常用单位</span>")
+
+
+def to_rich(text: str) -> str:
+    """把 γ_S^d 等记号转为 Qt 富文本上下标（HTML）。"""
+    for pattern, repl in _RICH_RULES:
+        text = pattern.sub(repl, text)
+    return text
 
 
 class SurfaceEnergyTab(QWidget):
@@ -178,7 +201,7 @@ class SurfaceEnergyTab(QWidget):
 
         process_box = QGroupBox("计算过程")
         p_layout = QVBoxLayout(process_box)
-        self._txt_process = QPlainTextEdit()
+        self._txt_process = QTextEdit()
         self._txt_process.setReadOnly(True)
         self._txt_process.setPlaceholderText("点击「计算并保存」后，在此显示逐步计算过程")
         self._txt_process.setStyleSheet(
@@ -236,7 +259,9 @@ class SurfaceEnergyTab(QWidget):
     def _on_method_changed(self, *args) -> None:
         spec = get_method_spec(self._method())
         self._lbl_hint.setText(f"{spec.label}：{spec.hint}")
-        self._lbl_equations.setText(spec.equations)
+        # 公式以规范数学形式展示（真上下标），符号说明单独一行
+        equations_html = "<br>".join(to_rich(line) for line in spec.equations.split("\n"))
+        self._lbl_equations.setText(equations_html + "<br>" + _SYMBOL_LEGEND)
         self._figure_container.setVisible(self._method() == "zisman")
 
     def _liquid_library(self) -> list:
@@ -355,7 +380,7 @@ class SurfaceEnergyTab(QWidget):
             values = [name, f"{gamma_sl:.2f}" if gamma_sl is not None else "—", f"{wa:.2f}"]
             for c, v in enumerate(values):
                 self._per_table.setItem(r, c, QTableWidgetItem(v))
-        self._txt_process.setPlainText("\n".join(result.steps))
+        self._txt_process.setHtml("<br>".join(to_rich(s) for s in result.steps))
         if self._method() == "zisman":
             self._draw_zisman(result)
 

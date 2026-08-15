@@ -133,7 +133,9 @@ def main() -> int:
     st = win.surface_tab
     st._radio_methods["owrk"].setChecked(True)
     assert st._btn_add_row.text() == "添加液体"
-    assert "液体表面张力 × (1 + cos接触角)" in st._lbl_equations.text(), st._lbl_equations.text()
+    # 公式以规范数学形式展示（真上下标 HTML），并有符号说明
+    eq = st._lbl_equations.text()
+    assert "<sub>S</sub>" in eq and "cosθ" in eq and "符号说明" in eq, eq
     assert st._table.horizontalHeaderItem(1).text() == "接触角 θ（度）"
     assert "色散分量" in st._table.horizontalHeaderItem(3).text()
     assert "色散分量" in st._history.horizontalHeaderItem(2).text()
@@ -152,6 +154,11 @@ def main() -> int:
     assert st._per_table.rowCount() == 2
     process_text = st._txt_process.toPlainText()
     assert "计算过程（OWRK" in process_text and "最小二乘" in process_text, process_text
+    # 过程内公式带真上标（Qt 序列化为 vertical-align:super）
+    assert "vertical-align" in st._txt_process.toHtml()
+    from fiber_tensile.surface_energy.ui import to_rich
+    assert to_rich("γ_S^d") == "γ<sub>S</sub><sup>d</sup>"
+    assert "γ<sub>" in to_rich("γ_SL")
 
     from fiber_tensile.surface_energy.exporters import (
         export_excel_report as se_xlsx, export_pdf_report as se_pdf)

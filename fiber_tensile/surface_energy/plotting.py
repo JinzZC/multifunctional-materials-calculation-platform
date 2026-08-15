@@ -33,15 +33,15 @@ def build_zisman_figure(points, gamma_c: float, r2: float,
     ax.plot(xline, slope * xline + intercept, linewidth=1.5, zorder=2,
             label="线性拟合")
     ax.axhline(1.0, color="gray", linestyle="--", linewidth=0.8)
-    ax.set_xlabel("液体表面张力 γ_L (mN/m)")
-    ax.set_ylabel("cos接触角")
+    ax.set_xlabel(r"$\gamma_L$ (mN/m)")
+    ax.set_ylabel(r"$\cos\theta$")
     ax.set_title(title)
     ax.grid(True, linestyle="--", alpha=0.5)
     ax.legend(fontsize=9)
 
     sign, abs_b = ("+", intercept) if intercept >= 0 else ("-", abs(intercept))
-    note = (f"拟合方程：cos接触角 = {slope:.4f} × γ_L {sign} {abs_b:.4f}\n"
-            f"临界表面张力 γ_c = {gamma_c:.2f} mN/m\n"
+    note = (f"拟合方程：$\\cos\\theta = {slope:.4f}\\,\\gamma_L {sign} {abs_b:.4f}$\n"
+            f"临界表面张力 $\\gamma_c$ = {gamma_c:.2f} mN/m\n"
             f"拟合优度 R² = {r2:.4f}")
     ax.text(0.97, 0.03, note, transform=ax.transAxes, fontsize=9.5,
             ha="right", va="bottom",
