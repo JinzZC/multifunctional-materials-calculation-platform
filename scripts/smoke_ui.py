@@ -202,16 +202,50 @@ def main() -> int:
     assert any("临界表面张力" in t for t in canvas_texts), canvas_texts
     assert "直线拟合" in st._txt_process.toPlainText()
 
-    # 9. 模块导航栏：两个模块可切换并记忆，模块名过长自动换行
-    assert win._nav.count() == 2
+    # 9. 模块导航栏：三个模块可切换并记忆，模块名过长自动换行
+    assert win._nav.count() == 3
     assert win._nav.item(0).text() == "纤维拉伸强度分析模块"
     assert win._nav.item(1).text() == "接触角表面能模块"
+    assert win._nav.item(2).text() == "复合材料基础计算模块"
     assert "多功能计算平台" in win.windowTitle()
     assert win._nav.wordWrap() is True
     # 各模块界面区块之间有可拖拽分隔条（QSplitter）
     from PySide6.QtWidgets import QSplitter
-    for tab in (win.entry_tab, win.analysis_tab, win.history_tab, win.surface_tab):
+    for tab in (win.entry_tab, win.analysis_tab, win.history_tab, win.surface_tab,
+                win.composites_tab):
         assert tab.findChild(QSplitter) is not None, type(tab).__name__
+
+    # 10. 单丝曲线分析：平台校正（含 0.5mm 平台的合成曲线）
+    ct = win.curve_tab
+    ct._spin_diameter.setValue(5.4)
+    ct._spin_gauge.setValue(25.0)
+    import numpy as np
+    from fiber_tensile.curve_analysis.core import analyze_curve
+    k = 230e9 * (np.pi * (5.4e-6) ** 2 / 4) / 0.025 / 1000.0   # N/mm
+    x = np.linspace(0, 0.95, 200)
+    f = np.where(x <= 0.5, 0.0, k * (x - 0.5))
+    ct._analyze(list(x), list(f))
+    assert ct._lbl_e.text().startswith("弹性模量 E = 230.00 GPa"), ct._lbl_e.text()
+    assert "1.800%" in ct._lbl_eps.text(), ct._lbl_eps.text()
+    assert "平台" in ct._txt_process.toPlainText()
+    ct._edit_sample_name.setText("冒烟-曲线")
+    ct._save()
+    assert ct._history.rowCount() == 1
+
+    # 11. 复合材料基础计算：混合法则 + 体积分数（酸解法）
+    cm = win.composites_tab
+    cm._rom_vf.setValue(0.6)
+    cm._edit_sample_name.setText("冒烟-ROM")
+    cm._save_rom()
+    assert cm._history.rowCount() == 1
+    assert "139.40" in cm._rom_lbl.text(), cm._rom_lbl.text()
+    cm._vf_radio_acid.setChecked(True)
+    cm._vf_sample.setText("冒烟-VF")
+    cm._vf_wf.setValue(0.65)
+    cm._vf_rhoc.setValue(1.5)
+    cm._save_vf()
+    assert cm._history.rowCount() == 2
+    assert "V_f = 0.5587" in cm._vf_lbl.text(), cm._vf_lbl.text()
     win._nav.setCurrentRow(1)
     assert win._stack.currentIndex() == 1
     win._nav.setCurrentRow(0)

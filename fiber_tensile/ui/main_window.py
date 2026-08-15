@@ -15,7 +15,9 @@ from PySide6.QtWidgets import (
     QTabWidget, QVBoxLayout, QWidget,
 )
 
+from ..composites.ui import CompositesTab
 from ..config import APP_NAME, APP_VERSION, default_db_path
+from ..curve_analysis.ui import CurveAnalysisTab
 from ..surface_energy.ui import SurfaceEnergyTab
 from . import prefs
 from .analysis_tab import AnalysisTab
@@ -60,8 +62,10 @@ class MainWindow(QMainWindow):
         self._nav.setStyleSheet(_NAV_STYLE)
         self._nav.addItem(QListWidgetItem("纤维拉伸强度分析模块"))
         self._nav.addItem(QListWidgetItem("接触角表面能模块"))
-        self._nav.item(0).setToolTip("单丝/纺织纤维强度计算、统计与 Weibull 分析")
+        self._nav.addItem(QListWidgetItem("复合材料基础计算模块"))
+        self._nav.item(0).setToolTip("单丝/纺织纤维强度计算、统计与 Weibull 分析、曲线分析")
         self._nav.item(1).setToolTip("接触角法测量固体表面能：OWRK/Wu/Fowkes/Zisman 计算")
+        self._nav.item(2).setToolTip("混合法则单层板常数、纤维体积分数与孔隙率")
         root.addWidget(self._nav)
 
         # ---- 右侧堆叠页面 ----
@@ -75,16 +79,22 @@ class MainWindow(QMainWindow):
         self.entry_tab = EntryTab(conn)
         self.analysis_tab = AnalysisTab(conn)
         self.history_tab = HistoryTab(conn)
+        self.curve_tab = CurveAnalysisTab(conn)
         self.analysis_tab.set_entry_tab(self.entry_tab)
         fiber_tabs.addTab(self.entry_tab, "① 数据录入")
         fiber_tabs.addTab(self.analysis_tab, "② 统计分析")
         fiber_tabs.addTab(self.history_tab, "③ 历史记录")
+        fiber_tabs.addTab(self.curve_tab, "④ 曲线分析")
         f_layout.addWidget(fiber_tabs)
         self._stack.addWidget(fiber_page)
 
         # 模块二：表面能
         self.surface_tab = SurfaceEnergyTab(conn)
         self._stack.addWidget(self.surface_tab)
+
+        # 模块三：复合材料基础计算
+        self.composites_tab = CompositesTab(conn)
+        self._stack.addWidget(self.composites_tab)
 
         root.addWidget(self._stack, 1)
         self.setCentralWidget(central)

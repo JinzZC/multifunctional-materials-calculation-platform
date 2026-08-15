@@ -89,9 +89,48 @@ INSERT OR IGNORE INTO se_liquids (name, gamma_total, gamma_d, gamma_p, builtin) 
  ('十六烷', 27.6, 27.6, 0.0, 1),
  ('苯甲醇', 39.0, 30.3, 8.7, 1);
 """
+# v3：单丝拉伸曲线分析（平台校正）+ 复合材料基础计算
+_SCHEMA_V3 = """
+CREATE TABLE IF NOT EXISTS fiber_curves (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    sample_name      TEXT    NOT NULL,
+    diameter_um      REAL    NOT NULL,
+    gauge_length_mm  REAL    NOT NULL,
+    fit_lo           REAL,
+    fit_hi           REAL,
+    e_gpa            REAL,
+    strength_mpa     REAL,
+    elongation_pct   REAL,
+    toe_eps_pct      REAL,
+    r2               REAL,
+    points_json      TEXT,
+    remark           TEXT,
+    test_date        TEXT,
+    created_at       TEXT    NOT NULL DEFAULT (datetime('now','localtime'))
+);
+
+CREATE TABLE IF NOT EXISTS cm_calcs (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    calc_type    TEXT    NOT NULL CHECK(calc_type IN ('rom','volume_fraction')),
+    sample_name  TEXT    NOT NULL,
+    inputs_json  TEXT    NOT NULL,
+    e1_gpa       REAL,
+    e2_gpa       REAL,
+    g12_gpa      REAL,
+    nu12         REAL,
+    rho_gcm3     REAL,
+    vf           REAL,
+    vm           REAL,
+    vv           REAL,
+    remark       TEXT,
+    test_date    TEXT,
+    created_at   TEXT    NOT NULL DEFAULT (datetime('now','localtime'))
+);
+"""
 MIGRATIONS: list[tuple[int, str]] = [
     (1, _SCHEMA_V1),
     (2, _SCHEMA_V2),
+    (3, _SCHEMA_V3),
 ]
 
 

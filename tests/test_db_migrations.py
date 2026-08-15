@@ -45,16 +45,17 @@ def test_legacy_database_is_adopted_without_data_loss(tmp_path):
 
 def test_new_migration_script_is_applied(monkeypatch, tmp_path):
     """模拟未来追加迁移：只应用未执行的新版本。"""
-    v3_script = "CREATE TABLE IF NOT EXISTS emi_evaluations (id INTEGER PRIMARY KEY);"
-    monkeypatch.setattr(db_module, "MIGRATIONS", MIGRATIONS + [(3, v3_script)])
+    v4_script = "CREATE TABLE IF NOT EXISTS emi_evaluations (id INTEGER PRIMARY KEY);"
+    monkeypatch.setattr(db_module, "MIGRATIONS", MIGRATIONS + [(4, v4_script)])
 
     conn = open_database(str(tmp_path / "c.db"))
     try:
-        assert get_schema_version(conn) == 3
+        assert get_schema_version(conn) == 4
         tables = {r["name"] for r in conn.execute(
             "SELECT name FROM sqlite_master WHERE type='table'")}
         assert "emi_evaluations" in tables
         assert "se_measurements" in tables      # v2 也一并应用
+        assert "fiber_curves" in tables         # v3 也一并应用
     finally:
         conn.close()
 
@@ -68,11 +69,11 @@ def test_existing_database_upgraded_when_new_version_added(monkeypatch, tmp_path
     assert get_schema_version(conn) == MIGRATIONS[-1][0]
     conn.close()
 
-    v3_script = "CREATE TABLE IF NOT EXISTS emi_evaluations (id INTEGER PRIMARY KEY);"
-    monkeypatch.setattr(db_module, "MIGRATIONS", MIGRATIONS + [(3, v3_script)])
+    v4_script = "CREATE TABLE IF NOT EXISTS emi_evaluations (id INTEGER PRIMARY KEY);"
+    monkeypatch.setattr(db_module, "MIGRATIONS", MIGRATIONS + [(4, v4_script)])
     conn = open_database(path)
     try:
-        assert get_schema_version(conn) == 3
+        assert get_schema_version(conn) == 4
         assert conn.execute("SELECT COUNT(*) AS c FROM batches").fetchone()["c"] == 1
     finally:
         conn.close()

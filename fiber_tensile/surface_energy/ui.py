@@ -40,64 +40,13 @@ logger = logging.getLogger(__name__)
 # 表格列：接触角紧随液体名称、高亮显示，其余参数由液体库自动填充
 COL_NAME, COL_ANGLE, COL_GAMMA, COL_GD, COL_GP = range(5)
 
-# 符号记号（γ_S^d 等）→ Qt 富文本真上下标；⟨分子|分母⟩ → 分数形式
-_RICH_RULES = [
-    (re.compile(r"γ_([SLc])\^([dp])"), r"γ<sub>\1</sub><sup>\2</sup>"),
-    (re.compile(r"W_A"), "W<sub>A</sub>"),
-    (re.compile(r"γ_SL"), "γ<sub>SL</sub>"),
-    (re.compile(r"γ_([SLc])"), r"γ<sub>\1</sub>"),
-    (re.compile(r"\^([dp])"), r"<sup>\1</sup>"),
-]
-_FRAC_RE = re.compile(r"⟨([^|⟩]*)\|([^⟩]*)⟩")
+# 公式富文本助手（真上下标、分数形式）与符号说明
+from ..ui.richtext import equation_line_html, to_rich
 
 _SYMBOL_LEGEND = (
     '<span style="color:#888; font-size:8.5pt;">符号说明：γ＝表面张力/表面能；'
     "下标 S＝固体、L＝液体、SL＝固液界面；上标 d＝色散分量、p＝极性分量；"
     "θ＝接触角；W<sub>A</sub>＝粘附功；mN/m 为常用单位</span>")
-
-
-def _apply_symbols(text: str) -> str:
-    """上下标记号 → 富文本（不处理分数）。"""
-    for pattern, repl in _RICH_RULES:
-        text = pattern.sub(repl, text)
-    return text
-
-
-def _fraction_html(num: str, den: str) -> str:
-    """分子/分母形式的分数（嵌套表格 + 上边框分数线）。"""
-    return (
-        '<table border="0" cellspacing="0" cellpadding="0">'
-        f'<tr><td align="center" style="padding:0 3px">{_apply_symbols(num)}</td></tr>'
-        '<tr><td style="border-top:1px solid #333; padding:0 3px"></td></tr>'
-        f'<tr><td align="center" style="padding:0 3px">{_apply_symbols(den)}</td></tr>'
-        '</table>')
-
-
-def to_rich(text: str) -> str:
-    """⟨分子|分母⟩ → 分数表格；γ_S^d 等记号 → 真上下标。"""
-    parts = _FRAC_RE.split(text)
-    out = []
-    for i in range(0, len(parts), 3):
-        if parts[i]:
-            out.append(_apply_symbols(parts[i]))
-        if i + 2 < len(parts):
-            out.append(_fraction_html(parts[i + 1], parts[i + 2]))
-    return "".join(out)
-
-
-def _equation_line_html(line: str) -> str:
-    """一条公式 → 单行表格：文本段与分数段交替、垂直居中对齐。"""
-    parts = _FRAC_RE.split(line)
-    cells = []
-    for i in range(0, len(parts), 3):
-        if parts[i]:
-            cells.append(f'<td valign="middle" style="padding:0 3px">'
-                         f"{_apply_symbols(parts[i])}</td>")
-        if i + 2 < len(parts):
-            cells.append(f'<td valign="middle" style="padding:0 3px">'
-                         f"{_fraction_html(parts[i + 1], parts[i + 2])}</td>")
-    return ('<table border="0" cellspacing="0" cellpadding="0"><tr>'
-            + "".join(cells) + "</tr></table>")
 
 
 class SurfaceEnergyTab(QWidget):
@@ -322,7 +271,7 @@ class SurfaceEnergyTab(QWidget):
         self._lbl_hint.setText(f"{spec.label}：{spec.hint}")
         # 公式以规范数学形式展示（真上下标、分数形式），符号说明单独一行
         equations_html = "<br>".join(
-            _equation_line_html(line) for line in spec.equations.split("\n"))
+            equation_line_html(line) for line in spec.equations.split("\n"))
         self._lbl_equations.setText(equations_html + "<br>" + _SYMBOL_LEGEND)
         self._figure_container.setVisible(self._method() == "zisman")
 
