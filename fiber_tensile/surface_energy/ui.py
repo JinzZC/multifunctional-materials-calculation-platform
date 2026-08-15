@@ -108,6 +108,7 @@ class SurfaceEnergyTab(QWidget):
         self._conn = conn
         self._canvas = None
         self._toolbar = None
+        self._liquid_add_counter = 0     # 「添加液体」轮换计数
         self._build_ui()
         self._connect_signals()
         self._on_method_changed()
@@ -344,15 +345,20 @@ class SurfaceEnergyTab(QWidget):
     def _add_row(self) -> None:
         r = self._table.rowCount()
         self._table.insertRow(r)
+        liquids = self._liquid_library()
         combo = QComboBox()
         combo.setEditable(True)
-        combo.addItems([l["name"] for l in self._liquid_library()])
+        combo.addItems([l["name"] for l in liquids])
+        # 默认液体按点击顺序轮换：第一次水，之后每次换下一种，不重复添加同一种
+        if liquids:
+            combo.setCurrentIndex(self._liquid_add_counter % len(liquids))
+        self._liquid_add_counter += 1
         combo.currentTextChanged.connect(
             lambda text, row=r: self._fill_row_from_library(row, text))
         self._table.setCellWidget(r, COL_NAME, combo)
         for col in (COL_GAMMA, COL_GD, COL_GP, COL_ANGLE):
             self._table.setItem(r, col, QTableWidgetItem(""))
-        # 默认选中第一个液体时也立即填充其参数
+        # 立即填充当前选中液体的参数
         self._fill_row_from_library(r, combo.currentText())
 
     def _fill_row_from_library(self, row: int, name: str) -> None:

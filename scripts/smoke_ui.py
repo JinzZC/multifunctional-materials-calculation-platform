@@ -145,13 +145,17 @@ def main() -> int:
     assert "色散分量" in st._table.horizontalHeaderItem(3).text()
     assert "色散分量" in st._history.horizontalHeaderItem(2).text()
     st._edit_sample_name.setText("冒烟-PTFE")
-    st._add_row()
-    st._table.cellWidget(0, 0).setCurrentText("水")    # 从液体库选择 → 自动填充 γ 参数
-    assert st._table.item(0, 2).text() == "72.8"
+    st._add_row()                                            # 第一次点击 → 默认水
+    assert st._table.cellWidget(0, 0).currentText() == "水"
+    assert st._table.item(0, 2).text() == "72.8"             # 参数已自动填充
     st._table.item(0, 1).setText("108")
-    st._add_row()
-    st._table.cellWidget(1, 0).setCurrentText("二碘甲烷")
+    st._add_row()                                            # 第二次点击 → 自动换下一种液体
+    assert st._table.cellWidget(1, 0).currentText() == "二碘甲烷"
+    assert st._table.item(1, 2).text() == "50.8"
     st._table.item(1, 1).setText("77")
+    st._add_row()                                            # 第三次 → 乙二醇
+    assert st._table.cellWidget(2, 0).currentText() == "乙二醇"
+    st._table.removeRow(2)                                   # 删掉多余行，保留两种液体
     st._save()
     assert st._history.rowCount() == 1
     assert st._lbl_gt.text().startswith("总表面能（γ_S）：19.50"), st._lbl_gt.text()
