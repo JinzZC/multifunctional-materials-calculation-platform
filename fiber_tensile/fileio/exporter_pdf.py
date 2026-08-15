@@ -8,7 +8,8 @@ reportlab/matplotlib 均为函数内延迟导入，避免拖慢应用启动。
 
 from datetime import datetime
 
-from ..core.models import MODE_FILAMENT, MODE_LABELS, MODE_TEXTILE, strength_unit_label
+from ..core.models import MODE_LABELS
+from ..core.modes import get_mode_spec
 
 _CJK = "STSong-Light"
 
@@ -52,7 +53,8 @@ def export_pdf_report(path, batch, analysis=None, weibull=None) -> None:
         ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
     ])
 
-    unit = strength_unit_label(batch.mode)
+    spec = get_mode_spec(batch.mode)
+    unit = spec.strength_unit
     doc = SimpleDocTemplate(
         str(path), pagesize=A4,
         leftMargin=2 * cm, rightMargin=2 * cm, topMargin=2 * cm, bottomMargin=2 * cm,
@@ -105,7 +107,7 @@ def export_pdf_report(path, batch, analysis=None, weibull=None) -> None:
             [f"特征强度 σ₀({unit})", f"{weibull.sigma0:.2f}"],
             ["拟合优度 R²", f"{weibull.r2:.4f}"],
         ]
-        if batch.mode == MODE_TEXTILE and batch.density is not None:
+        if spec.uses_density and batch.density is not None:
             kv_rows.append(["特征强度 σ₀(MPa)", f"{weibull.sigma0 * batch.density * 100:.2f}"])
         story.append(Table([[_p(k, body_style), _p(v, body_style)] for k, v in kv_rows],
                            colWidths=[5 * cm, 10 * cm], style=grid_style))
@@ -119,12 +121,12 @@ def export_pdf_report(path, batch, analysis=None, weibull=None) -> None:
         story.append(_p("数据不足（Weibull 分析至少需要 2 个数据点）", body_style))
 
     story.append(_p("四、数据明细", h2_style))
-    dim_col = "直径(μm)" if batch.mode == MODE_FILAMENT else "线密度(dtex)"
+    dim_col = spec.dim_label
     headers4 = ["编号", "断裂强力", "强力单位", dim_col, "密度(g/cm³)",
                 f"强度({unit})", "强度(MPa)", "备注", "测试日期"]
     data_rows = [[_p(h, cell_small) for h in headers4]]
     for s in batch.samples:
-        dim = s.diameter_um if batch.mode == MODE_FILAMENT else s.linear_density_dtex
+        dim = getattr(s, spec.dim_field)
         data_rows.append([_p(v, cell_small) for v in [
             s.sample_no or "—",
             f"{s.breaking_force:g}",

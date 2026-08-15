@@ -1,12 +1,14 @@
-"""Tab1 数据录入：参数录入、强度实时预览、当前批次表格、保存入库。"""
+"""Tab1 数据录入：参数录入、强度实时预览、当前批次表格、保存入库。
+
+模式单选按钮与维度输入框（直径/线密度）由计算模式注册表（core/modes.py）动态生成，
+新增模式无需改本页代码。
+"""
 
 from __future__ import annotations
 
 import logging
 import os
 import sqlite3
-
-logger = logging.getLogger(__name__)
 
 from PySide6.QtCore import QDate, Qt, Signal
 from PySide6.QtWidgets import (
@@ -15,15 +17,15 @@ from PySide6.QtWidgets import (
     QRadioButton, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
-from ..core.formulas import compute_strength
-from ..core.models import (
-    MODE_FILAMENT, MODE_LABELS, MODE_TEXTILE, Batch, Sample, strength_unit_label,
-)
+from ..core.models import Batch, Sample
+from ..core.modes import MODES, get_mode_spec
 from ..core.units import force_to_cn
 from ..data.repository import add_samples, create_batch
 from ..fileio.template import generate_template
 from . import prefs
 from .dialogs import ImportWizardDialog
+
+logger = logging.getLogger(__name__)
 
 
 class EntryTab(QWidget):
@@ -39,7 +41,7 @@ class EntryTab(QWidget):
         self._counter = 1                 # 自动编号
         self._build_ui()
         self._connect_signals()
-        self._update_preview()
+        self._on_mode_changed()
 
     # ---- UI 构建 ----
 
@@ -51,11 +53,12 @@ class EntryTab(QWidget):
 
         mode_box = QGroupBox("计算模式")
         mode_layout = QHBoxLayout(mode_box)
-        self._radio_filament = QRadioButton(MODE_LABELS[MODE_FILAMENT])
-        self._radio_filament.setChecked(True)
-        self._radio_textile = QRadioButton(MODE_LABELS[MODE_TEXTILE])
-        mode_layout.addWidget(self._radio_filament)
-        mode_layout.addWidget(self._radio_textile)
+        self._radio_modes: dict[str, QRadioButton] = {}
+        for i, (key, spec) in enumerate(MODES.items()):
+            radio = QRadioButton(spec.label)
+            radio.setChecked(i == 0)
+            self._radio_modes[key] = radio
+            mode_layout.addWidget(radio)
         left.addWidget(mode_box)
 
         batch_box = QGroupBox("批次信息")
@@ -87,22 +90,16 @@ class EntryTab(QWidget):
         force_row = QHBoxLayout()
         force_row.addWidget(self._spin_force, 1)
         force_row.addWidget(self._combo_unit)
-        self._spin_diameter = QDoubleSpinBox()
-        self._spin_diameter.setRange(0.0001, 1e6)
-        self._spin_diameter.setDecimals(4)
-        self._spin_diameter.setValue(7.0)
-        self._lbl_diameter = QLabel("直径(μm)：")
-        self._spin_dtex = QDoubleSpinBox()
-        self._spin_dtex.setRange(0.0001, 1e6)
-        self._spin_dtex.setDecimals(4)
-        self._spin_dtex.setValue(1.5)
-        self._lbl_dtex = QLabel("线密度(dtex)：")
+        # 维度输入框：标签与默认值随模式变化（由注册表驱动）
+        self._lbl_dim = QLabel()
+        self._spin_dim = QDoubleSpinBox()
+        self._spin_dim.setRange(0.0001, 1e6)
+        self._spin_dim.setDecimals(4)
         self._date_test = QDateEdit(QDate.currentDate())
         self._date_test.setCalendarPopup(True)
         self._date_test.setDisplayFormat("yyyy-MM-dd")
         form2.addRow("断裂强力：", force_row)
-        form2.addRow(self._lbl_diameter, self._spin_diameter)
-        form2.addRow(self._lbl_dtex, self._spin_dtex)
+        form2.addRow(self._lbl_dim, self._spin_dim)
         form2.addRow("测试日期：", self._date_test)
         left.addWidget(sample_box)
 
@@ -151,15 +148,13 @@ class EntryTab(QWidget):
         right.addLayout(bottom)
         root.addLayout(right, 4)
 
-        self._update_table_headers()
-
     def _connect_signals(self) -> None:
-        self._radio_filament.toggled.connect(self._on_mode_changed)
+        for radio in self._radio_modes.values():
+            radio.toggled.connect(self._on_mode_changed)
         self._spin_force.valueChanged.connect(self._update_preview)
         self._combo_unit.currentTextChanged.connect(self._update_preview)
         self._combo_unit.currentTextChanged.connect(prefs.set_default_force_unit)
-        self._spin_diameter.valueChanged.connect(self._update_preview)
-        self._spin_dtex.valueChanged.connect(self._update_preview)
+        self._spin_dim.valueChanged.connect(self._update_preview)
         self._spin_density.valueChanged.connect(self._update_preview)
         self._btn_add.clicked.connect(self._add_sample)
         self._btn_import.clicked.connect(self._import_file)
@@ -171,45 +166,48 @@ class EntryTab(QWidget):
     # ---- 模式与预览 ----
 
     def _mode(self) -> str:
-        return MODE_FILAMENT if self._radio_filament.isChecked() else MODE_TEXTILE
+        for key, radio in self._radio_modes.items():
+            if radio.isChecked():
+                return key
+        return next(iter(MODES))
+
+    def _spec(self):
+        return get_mode_spec(self._mode())
 
     def _on_mode_changed(self, *args) -> None:   # toggled 信号带 bool 参数，此处忽略
-        is_filament = self._radio_filament.isChecked()
-        self._lbl_diameter.setVisible(is_filament)
-        self._spin_diameter.setVisible(is_filament)
-        self._lbl_dtex.setVisible(not is_filament)
-        self._spin_dtex.setVisible(not is_filament)
+        spec = self._spec()
+        self._lbl_dim.setText(f"{spec.dim_label}：")
+        self._spin_dim.setValue(spec.dim_default)
         self._update_table_headers()
         self._update_preview()
 
     def _preview_payload(self) -> tuple:
-        mode = self._mode()
+        """返回 (spec, force_cn, dim, density)。"""
+        spec = self._spec()
         force_cn = force_to_cn(self._spin_force.value(), self._combo_unit.currentText())
-        diameter = self._spin_diameter.value() if mode == MODE_FILAMENT else None
-        dtex = self._spin_dtex.value() if mode == MODE_TEXTILE else None
+        dim = self._spin_dim.value()
         density = self._spin_density.value() or None
-        return mode, force_cn, diameter, dtex, density
+        return spec, force_cn, dim, density
 
     def _update_preview(self) -> None:
         try:
-            mode, force_cn, diameter, dtex, density = self._preview_payload()
-            strength, strength_mpa = compute_strength(mode, force_cn, diameter, dtex, density)
+            spec, force_cn, dim, density = self._preview_payload()
+            strength, strength_mpa = spec.compute(force_cn, dim, density)
         except ValueError:
             self._lbl_preview.setText("输入无效，请检查数值")
             return
-        if mode == MODE_FILAMENT:
-            text = f"σ = {strength:,.2f} MPa（{strength / 1000:.4f} GPa）"
+        if not spec.uses_density:
+            text = f"σ = {strength:,.2f} {spec.strength_unit}（{strength / 1000:.4f} GPa）"
         else:
-            text = f"断裂强度 = {strength:,.4f} cN/dtex"
+            text = f"断裂强度 = {strength:,.4f} {spec.strength_unit}"
             if strength_mpa is not None:
                 text += f"（≈ {strength_mpa:,.2f} MPa）"
         self._lbl_preview.setText(text)
 
     def _update_table_headers(self) -> None:
-        mode = self._mode()
-        headers = ["编号", "断裂强力",
-                   "直径(μm)" if mode == MODE_FILAMENT else "线密度(dtex)",
-                   "密度(g/cm³)", f"强度({strength_unit_label(mode)})", "备注", "测试日期"]
+        spec = self._spec()
+        headers = ["编号", "断裂强力", spec.dim_label,
+                   "密度(g/cm³)", f"强度({spec.strength_unit})", "备注", "测试日期"]
         self._table.setHorizontalHeaderLabels(headers)
         self._table.setColumnWidth(0, 60)
         self._table.setColumnWidth(1, 90)
@@ -220,10 +218,10 @@ class EntryTab(QWidget):
     # ---- 表格操作 ----
 
     def _append_table_row(self, sample: Sample, density: float | None) -> None:
-        mode = self._mode()
+        spec = self._spec()
         r = self._table.rowCount()
         self._table.insertRow(r)
-        dim = sample.diameter_um if mode == MODE_FILAMENT else sample.linear_density_dtex
+        dim = getattr(sample, spec.dim_field)
         values = [
             sample.sample_no or "",
             f"{sample.breaking_force:g} {sample.force_unit}",
@@ -260,22 +258,21 @@ class EntryTab(QWidget):
     # ---- 添加 / 导入 / 保存 ----
 
     def _add_sample(self) -> None:
-        mode, force_cn, diameter, dtex, density = self._preview_payload()
+        spec, force_cn, dim, density = self._preview_payload()
         try:
-            strength, strength_mpa = compute_strength(mode, force_cn, diameter, dtex, density)
+            strength, strength_mpa = spec.compute(force_cn, dim, density)
         except ValueError as e:
             QMessageBox.warning(self, "无法添加", str(e))
             return
         sample = Sample(
             breaking_force=self._spin_force.value(),
             force_unit=self._combo_unit.currentText(),
-            diameter_um=diameter,
-            linear_density_dtex=dtex,
             sample_no=str(self._counter),
             remark=self._edit_remark.text().strip() or None,
             test_date=self._date_test.date().toString("yyyy-MM-dd"),
             strength=strength,
             strength_mpa=strength_mpa,
+            **{spec.dim_field: dim},
         )
         self._pending.append(sample)
         self._counter += 1

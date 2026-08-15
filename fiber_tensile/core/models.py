@@ -1,19 +1,21 @@
-"""数据模型定义：纯 dataclass 与模式常量，无外部依赖。"""
+"""数据模型定义：纯 dataclass 与常量，无外部依赖。
+
+模式常量与单位标签的单一事实来源在 core/modes.py（计算模式注册表），此处再导出
+以兼容既有导入路径。
+"""
 
 from dataclasses import dataclass, field
 
-# 模式常量（与数据库 CHECK 约束保持一致）
-MODE_FILAMENT = "filament"  # 单丝模式：按直径计算 σ = 4F/(πd²)，MPa/GPa
-MODE_TEXTILE = "textile"    # 纺织纤维模式：断裂强度 = F/线密度，cN/dtex
+from .modes import (  # noqa: F401 — 兼容旧导入路径
+    MODE_FILAMENT,
+    MODE_LABELS,
+    MODE_TEXTILE,
+    VALID_MODES,
+    get_mode_spec,
+    strength_unit_label,
+)
 
-VALID_MODES = (MODE_FILAMENT, MODE_TEXTILE)
 VALID_FORCE_UNITS = ("cN", "N", "mN")
-
-# 模式显示名（UI 用）
-MODE_LABELS = {
-    MODE_FILAMENT: "单丝模式",
-    MODE_TEXTILE: "纺织纤维模式",
-}
 
 
 @dataclass
@@ -87,12 +89,3 @@ class RowError:
     message: str
     column: str | None = None
     raw_value: object = None
-
-
-def strength_unit_label(mode: str) -> str:
-    """强度的本征单位标签：单丝=MPa，纺织=cN/dtex。"""
-    if mode == MODE_FILAMENT:
-        return "MPa"
-    if mode == MODE_TEXTILE:
-        return "cN/dtex"
-    raise ValueError(f"未知模式：{mode!r}")

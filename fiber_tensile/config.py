@@ -1,15 +1,19 @@
-"""全局配置：应用信息、数据库路径、数值范围、matplotlib 中文配置。"""
+"""全局配置：应用信息、数据库路径、matplotlib 中文配置。
+
+数值范围常量已移至 core/modes.py（计算模式注册表），此处仅再导出。
+"""
 
 import os
 
+from .core.modes import (  # noqa: F401 — 兼容旧导入路径
+    RANGE_DENSITY_GCM3,
+    RANGE_DIAMETER_UM,
+    RANGE_FORCE_CN,
+    RANGE_LINEAR_DENSITY_DTEX,
+)
+
 APP_NAME = "纤维拉伸强度分析工具"
 APP_VERSION = "0.1.0"
-
-# 数值合理范围（超出仅警告，不阻断录入）
-RANGE_DIAMETER_UM = (0.1, 1000.0)          # 直径 μm
-RANGE_FORCE_CN = (0.001, 100000.0)         # 断裂强力 cN
-RANGE_LINEAR_DENSITY_DTEX = (0.05, 100000.0)  # 线密度 dtex
-RANGE_DENSITY_GCM3 = (0.5, 3.5)            # 密度 g/cm³
 
 
 def default_db_path() -> str:

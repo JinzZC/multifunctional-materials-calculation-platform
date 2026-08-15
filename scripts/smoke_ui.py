@@ -53,20 +53,20 @@ def main() -> int:
     expected = f"{filament_strength_mpa(10.0, 7.0):,.2f}"
     tab._spin_force.setValue(10.0)
     tab._combo_unit.setCurrentText("cN")
-    tab._spin_diameter.setValue(7.0)
+    tab._spin_dim.setValue(7.0)
     assert expected in tab._lbl_preview.text(), f"预览不符：{tab._lbl_preview.text()}"
-    # 1b. 模式切换：纺织模式 10 cN / 2 dtex → 5 cN/dtex
-    tab._radio_textile.setChecked(True)
+    # 1b. 模式切换：纺织模式 10 cN / 2 dtex → 5 cN/dtex（维度输入框随注册表切换）
+    tab._radio_modes["textile"].setChecked(True)
     tab._spin_force.setValue(10.0)
-    tab._spin_dtex.setValue(2.0)
+    tab._spin_dim.setValue(2.0)
     assert "5.0000 cN/dtex" in tab._lbl_preview.text(), f"纺织预览不符：{tab._lbl_preview.text()}"
-    tab._radio_filament.setChecked(True)
+    tab._radio_modes["filament"].setChecked(True)
     tab._spin_force.setValue(10.0)
-    tab._spin_diameter.setValue(7.0)
+    tab._spin_dim.setValue(7.0)
     # 2. 录入 5 条数据并保存
     for f, d in [(10.0, 7.0), (9.5, 7.2), (10.8, 6.8), (9.0, 7.1), (10.2, 6.9)]:
         tab._spin_force.setValue(f)
-        tab._spin_diameter.setValue(d)
+        tab._spin_dim.setValue(d)
         tab._add_sample()
     assert tab._table.rowCount() == 5
     tab._edit_batch_name.setText("冒烟测试批次")

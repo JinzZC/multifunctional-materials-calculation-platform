@@ -41,7 +41,10 @@ CREATE INDEX IF NOT EXISTS idx_samples_batch ON samples(batch_id);
 CREATE INDEX IF NOT EXISTS idx_batches_created ON batches(created_at);
 """
 
-# 未来示例：版本 2 追加复合材料电磁屏蔽模块的表，例如
+# 未来扩展示例：
+#   - 新增计算模式（core/modes.py 注册表）时：batches.mode 的 CHECK 约束需要放宽，
+#     需写 v2 迁移重建 batches 表（SQLite 不支持修改 CHECK），并迁移旧数据；
+#   - 追加复合材料电磁屏蔽等新功能域的表：
 # _SCHEMA_V2 = """
 # CREATE TABLE IF NOT EXISTS emi_evaluations (
 #     id INTEGER PRIMARY KEY AUTOINCREMENT, ...);

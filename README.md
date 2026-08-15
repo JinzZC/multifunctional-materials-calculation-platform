@@ -107,14 +107,20 @@ py -3 scripts/smoke_ui.py
 ```
 main.py                  入口
 fiber_tensile/
-├── config.py            应用配置、数值范围、matplotlib 中文配置
+├── config.py            应用配置、matplotlib 中文配置（数值范围再导出自 core/modes.py）
+├── logging_setup.py     日志配置与未捕获异常钩子（app.log 与数据库同目录）
 ├── core/                纯计算层（numpy）：单位换算、强度公式、统计、Weibull 拟合、数据模型
-├── data/                持久层：SQLite 建表与批次/样本 CRUD、强度缓存重算
+│   └── modes.py         计算模式注册表：新模式的单一事实来源（标签/单位/维度字段/公式）
+├── data/                持久层：SQLite 版本化迁移、批次/样本 CRUD、强度缓存重算
 ├── fileio/              文件层：Excel/CSV/TXT 导入校验、模板生成、Excel/PDF 报告导出
-├── plotting.py          Weibull 拟合图构建（UI 与报告共用）
-└── ui/                  Qt 界面：主窗口、录入/分析/历史三个 Tab、导入向导、批次对比
+├── plotting.py          Weibull 拟合图构建（UI 与报告共用，含拟合方程标注）
+└── ui/                  Qt 界面：主窗口、录入/分析/历史三个 Tab、导入向导、批次对比、偏好记忆
 scripts/
 ├── smoke_ui.py          UI 冒烟测试
-└── build.bat            一键打包脚本
-tests/                   pytest 单元测试
+├── generate_test_data.py  随机测试数据生成（参数化，--skip-db 不入库）
+├── build.bat            一键双打包（文件夹版 + 单文件版）
+├── verify_exe.ps1 / measure_startup.ps1  打包验证与启动测速（用临时库，不碰真实数据）
+tests/                   pytest 单元测试（92 个用例）
 ```
+
+**扩展指南**：新增计算模式 → `core/modes.py` 注册表加一条 `ModeSpec` + `core/formulas.py` 写公式函数，录入表单/导入校验/报告列自动适配；新增功能域（如 EMI）→ 加迁移建表 + 独立模块 + 新 Tab。

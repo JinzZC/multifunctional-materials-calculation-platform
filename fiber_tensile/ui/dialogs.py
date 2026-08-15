@@ -10,7 +10,8 @@ from PySide6.QtWidgets import (
     QVBoxLayout, QWidget,
 )
 
-from ..core.models import MODE_FILAMENT, MODE_LABELS, MODE_TEXTILE, strength_unit_label
+from ..core.models import MODE_LABELS, strength_unit_label
+from ..core.modes import MODES
 from ..data.repository import list_batches
 from ..fileio.importer import ImportFileError, parse_file
 from . import prefs
@@ -33,7 +34,7 @@ class ImportWizardDialog(QDialog):
         if not path:
             return None
         prefs.set_last_dir(str(Path(path).parent))
-        # 解析：模式歧义（同时含直径与线密度列）时请用户指定
+        # 解析：模式歧义（文件同时含多个模式的维度列）时请用户指定
         mode = None
         while True:
             try:
@@ -43,19 +44,22 @@ class ImportWizardDialog(QDialog):
                 if mode is None and "同时包含" in str(e):
                     box = QMessageBox(parent)
                     box.setWindowTitle("请指定计算模式")
-                    box.setText("文件同时包含「直径(μm)」与「线密度(dtex)」列，\n"
-                                "请选择以哪个模式解析：")
-                    btn_f = box.addButton("单丝模式（用直径）", QMessageBox.AcceptRole)
-                    btn_t = box.addButton("纺织模式（用线密度）", QMessageBox.ActionRole)
+                    box.setText(f"{e}\n请选择以哪个模式解析：")
+                    mode_buttons: dict = {}
+                    for key, spec in MODES.items():
+                        btn = box.addButton(f"{spec.label}（用{spec.dim_label}）",
+                                            QMessageBox.AcceptRole)
+                        mode_buttons[key] = btn
                     box.addButton("取消", QMessageBox.RejectRole)
                     box.exec()
-                    if box.clickedButton() is btn_f:
-                        mode = MODE_FILAMENT
-                        continue
-                    if box.clickedButton() is btn_t:
-                        mode = MODE_TEXTILE
-                        continue
-                    return None
+                    clicked = box.clickedButton()
+                    for key, btn in mode_buttons.items():
+                        if clicked is btn:
+                            mode = key
+                            break
+                    else:
+                        return None
+                    continue
                 QMessageBox.critical(parent, "导入失败", str(e))
                 return None
         dlg = ImportWizardDialog(conn, preview, Path(path).name, parent)
@@ -124,16 +128,17 @@ class ImportWizardDialog(QDialog):
         layout.addWidget(buttons)
 
     def _build_preview_table(self, p) -> QTableWidget:
-        if p.inferred_mode == MODE_FILAMENT:
-            headers = ["编号", "断裂强力", "强力单位", "直径(μm)", "密度(g/cm³)", "备注", "测试日期"]
-        else:
-            headers = ["编号", "断裂强力", "强力单位", "线密度(dtex)", "密度(g/cm³)", "备注", "测试日期"]
+        from ..core.modes import get_mode_spec
+
+        spec = get_mode_spec(p.inferred_mode)
+        headers = ["编号", "断裂强力", "强力单位", spec.dim_label,
+                   "密度(g/cm³)", "备注", "测试日期"]
         table = QTableWidget(min(_PREVIEW_LIMIT, p.valid_rows), len(headers))
         table.setHorizontalHeaderLabels(headers)
         table.setEditTriggers(QTableWidget.NoEditTriggers)
         table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
         for r, s in enumerate(p.samples[:_PREVIEW_LIMIT]):
-            dim = s.diameter_um if p.inferred_mode == MODE_FILAMENT else s.linear_density_dtex
+            dim = getattr(s, spec.dim_field)
             values = [
                 s.sample_no or "", f"{s.breaking_force:g}", s.force_unit,
                 f"{dim:g}", f"{s.density_gcm3:g}" if s.density_gcm3 is not None else "",

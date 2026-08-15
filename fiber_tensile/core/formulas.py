@@ -15,7 +15,7 @@
 
 import math
 
-from .models import MODE_FILAMENT, MODE_TEXTILE
+from .modes import get_mode_spec
 
 
 def _require_positive(value, name: str) -> float:
@@ -58,17 +58,13 @@ def compute_strength(mode: str, force_cn: float, diameter_um=None,
                      linear_density_dtex=None, density_gcm3=None) -> tuple:
     """按批次模式计算强度，返回 (strength, strength_mpa)。
 
+    分发到计算模式注册表（core/modes.py）中该模式的公式：
     - filament：strength 为 MPa，strength_mpa 恒 None
     - textile：strength 为 cN/dtex；给了密度时 strength_mpa 为 MPa 换算值，否则 None
     """
-    if mode == MODE_FILAMENT:
-        if diameter_um is None:
-            raise ValueError("单丝模式缺少直径")
-        return filament_strength_mpa(force_cn, diameter_um), None
-    if mode == MODE_TEXTILE:
-        if linear_density_dtex is None:
-            raise ValueError("纺织模式缺少线密度")
-        tenacity = textile_tenacity_cn_dtex(force_cn, linear_density_dtex)
-        mpa = tenacity_to_mpa(tenacity, density_gcm3) if density_gcm3 is not None else None
-        return tenacity, mpa
-    raise ValueError(f"未知模式：{mode!r}")
+    spec = get_mode_spec(mode)
+    dim = {"diameter_um": diameter_um,
+           "linear_density_dtex": linear_density_dtex}[spec.dim_field]
+    if dim is None:
+        raise ValueError(f"{spec.label}缺少{spec.dim_label}")
+    return spec.compute(force_cn, dim, density_gcm3)

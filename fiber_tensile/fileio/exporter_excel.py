@@ -3,7 +3,8 @@
 openpyxl/matplotlib 均为函数内延迟导入，避免拖慢应用启动。
 """
 
-from ..core.models import MODE_FILAMENT, MODE_LABELS, MODE_TEXTILE, strength_unit_label
+from ..core.models import MODE_LABELS
+from ..core.modes import get_mode_spec
 
 
 def _styles():
@@ -60,7 +61,8 @@ def export_excel_report(path, batch, analysis=None, weibull=None) -> None:
     from ..plotting import build_weibull_figure
 
     styles = _styles()
-    unit = strength_unit_label(batch.mode)
+    spec = get_mode_spec(batch.mode)
+    unit = spec.strength_unit
     wb = Workbook()
     ws = wb.active
     ws.title = "统计汇总"
@@ -117,7 +119,7 @@ def export_excel_report(path, batch, analysis=None, weibull=None) -> None:
             (f"特征强度 σ₀({unit})", round(weibull.sigma0, 2)),
             ("拟合优度 R²", round(weibull.r2, 4)),
         ]
-        if batch.mode == MODE_TEXTILE and batch.density is not None:
+        if spec.uses_density and batch.density is not None:
             kv_rows.append(("特征强度 σ₀(MPa)", round(weibull.sigma0 * batch.density * 100, 2)))
         for k, v in kv_rows:
             row = _write_kv(ws, row, k, v, styles)
@@ -134,12 +136,12 @@ def export_excel_report(path, batch, analysis=None, weibull=None) -> None:
 
     # ---- Sheet2 数据明细 ----
     ws2 = wb.create_sheet("数据明细")
-    dim_col = "直径(μm)" if batch.mode == MODE_FILAMENT else "线密度(dtex)"
+    dim_col = spec.dim_label
     headers2 = ["编号", "断裂强力", "强力单位", dim_col, "密度(g/cm³)",
                 f"强度({unit})", "强度(MPa)", "备注", "测试日期"]
     rows2 = []
     for s in batch.samples:
-        dim = s.diameter_um if batch.mode == MODE_FILAMENT else s.linear_density_dtex
+        dim = getattr(s, spec.dim_field)
         rows2.append([
             s.sample_no or "—",
             s.breaking_force,

@@ -11,7 +11,8 @@ from PySide6.QtWidgets import (
     QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
-from ..core.models import MODE_LABELS, MODE_TEXTILE, Batch, strength_unit_label
+from ..core.models import MODE_LABELS, Batch
+from ..core.modes import get_mode_spec, strength_unit_label
 from ..core.statistics import batch_statistics
 from ..core.weibull import weibull_fit
 from ..data.repository import get_batch, get_strengths, list_batches
@@ -219,7 +220,7 @@ class AnalysisTab(QWidget):
         self._weibull_error = None
         self._lbl_m.setText(f"Weibull 模数 m = {w.m:.4f}")
         sigma0_text = f"特征强度 σ₀ = {w.sigma0:.2f} {unit}"
-        if mode == MODE_TEXTILE and density is not None:
+        if get_mode_spec(mode).uses_density and density is not None:
             sigma0_text += f"（≈ {w.sigma0 * density * 100:.2f} MPa）"
         self._lbl_sigma0.setText(sigma0_text)
         self._lbl_r2.setText(f"拟合优度 R² = {w.r2:.4f}")

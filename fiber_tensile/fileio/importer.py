@@ -16,20 +16,9 @@ from dataclasses import dataclass, field
 from io import BytesIO
 from pathlib import Path
 
-from ..config import (
-    RANGE_DENSITY_GCM3,
-    RANGE_DIAMETER_UM,
-    RANGE_FORCE_CN,
-    RANGE_LINEAR_DENSITY_DTEX,
-)
-from ..core.models import (
-    MODE_FILAMENT,
-    MODE_TEXTILE,
-    VALID_FORCE_UNITS,
-    VALID_MODES,
-    RowError,
-    Sample,
-)
+from ..config import RANGE_DENSITY_GCM3, RANGE_FORCE_CN
+from ..core.models import VALID_FORCE_UNITS, VALID_MODES, RowError, Sample
+from ..core.modes import MODES, get_mode_spec
 from ..core.units import force_to_cn
 
 # 规范列名 → (别名集合, 内部字段名)
@@ -214,23 +203,27 @@ def parse_file(path, mode: str | None = None) -> ImportPreview:
     mapping = _match_headers(df)
     if "breaking_force" not in mapping:
         raise ImportFileError("缺少必填列「断裂强力」")
-    has_diameter = "diameter_um" in mapping
-    has_dtex = "linear_density_dtex" in mapping
 
+    # 模式确定：按注册表中各模式的维度字段推断或校验
+    mode_specs = list(MODES.values())
     if mode is None:
-        if has_diameter and has_dtex:
+        present = [s for s in mode_specs if s.dim_field in mapping]
+        if len(present) > 1:
             raise ImportFileError(
-                "文件同时包含「直径(μm)」与「线密度(dtex)」列，请手动指定模式或删除多余列")
-        if has_diameter:
-            mode = MODE_FILAMENT
-        elif has_dtex:
-            mode = MODE_TEXTILE
-        else:
-            raise ImportFileError("缺少「直径(μm)」或「线密度(dtex)」列，无法确定计算模式")
-    elif mode == MODE_FILAMENT and not has_diameter:
-        raise ImportFileError("单丝模式需要「直径(μm)」列（若文件为线密度数据请改选纺织模式）")
-    elif mode == MODE_TEXTILE and not has_dtex:
-        raise ImportFileError("纺织模式需要「线密度(dtex)」列（若文件为直径数据请改选单丝模式）")
+                "文件同时包含" + "与".join(f"「{s.dim_label}」" for s in present)
+                + "列，请手动指定模式或删除多余列")
+        if not present:
+            raise ImportFileError(
+                "缺少" + "或".join(f"「{s.dim_label}」" for s in mode_specs)
+                + "列，无法确定计算模式")
+        spec = present[0]
+        mode = spec.key
+    else:
+        spec = get_mode_spec(mode)
+        if spec.dim_field not in mapping:
+            raise ImportFileError(
+                f"{spec.label}需要「{spec.dim_label}」列"
+                f"（若文件为其他维度数据请改选对应模式）")
 
     preview = ImportPreview(inferred_mode=mode, total_rows=len(df))
     batch_values: set[str] = set()
@@ -247,19 +240,14 @@ def parse_file(path, mode: str | None = None) -> ImportPreview:
         unit = _parse_force_unit(
             row[mapping["force_unit"]] if "force_unit" in mapping else None, row_number, errors)
 
-        diameter = dtex = density = test_date = None
-        if mode == MODE_FILAMENT:
-            diameter = _parse_number(row[mapping["diameter_um"]], "直径(μm)", row_number, errors)
-            if diameter is not None:
-                _warn_out_of_range(diameter, "直径(μm)", row_number,
-                                   *RANGE_DIAMETER_UM, warnings)
-        else:
-            dtex = _parse_number(row[mapping["linear_density_dtex"]],
-                                 "线密度(dtex)", row_number, errors)
-            if dtex is not None:
-                _warn_out_of_range(dtex, "线密度(dtex)", row_number,
-                                   *RANGE_LINEAR_DENSITY_DTEX, warnings)
-        if "density_gcm3" in mapping and not _is_blank(row[mapping["density_gcm3"]]):
+        density = test_date = None
+        dim = _parse_number(row[mapping[spec.dim_field]], spec.dim_label,
+                            row_number, errors)
+        if dim is not None:
+            _warn_out_of_range(dim, spec.dim_label, row_number,
+                               *spec.dim_range, warnings)
+        if spec.uses_density and "density_gcm3" in mapping \
+                and not _is_blank(row[mapping["density_gcm3"]]):
             density = _parse_number(row[mapping["density_gcm3"]], "密度(g/cm³)",
                                     row_number, errors)
             if density is not None:
@@ -291,12 +279,11 @@ def parse_file(path, mode: str | None = None) -> ImportPreview:
         preview.samples.append(Sample(
             breaking_force=force,
             force_unit=unit,
-            diameter_um=diameter if mode == MODE_FILAMENT else None,
-            linear_density_dtex=dtex if mode == MODE_TEXTILE else None,
             sample_no=sample_no,
             remark=remark,
             test_date=test_date,
             density_gcm3=density,
+            **{spec.dim_field: dim},
         ))
 
     preview.valid_rows = len(preview.samples)
