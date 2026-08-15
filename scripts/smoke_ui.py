@@ -25,6 +25,7 @@ from fiber_tensile.data.db import open_database
 from fiber_tensile.data.repository import get_batch, get_strengths, list_batches
 from fiber_tensile.fileio.exporter_excel import export_excel_report
 from fiber_tensile.fileio.exporter_pdf import export_pdf_report
+from fiber_tensile.logging_setup import setup_logging
 from fiber_tensile.ui.main_window import MainWindow
 
 
@@ -33,6 +34,11 @@ def main() -> int:
     tmp_db = os.path.join(tempfile.gettempdir(), "fiber_smoke.db")
     if os.path.exists(tmp_db):
         os.remove(tmp_db)
+    # 日志与数据库同目录
+    import logging
+    log_path = setup_logging(tmp_db)
+    logging.getLogger("app").info("smoke 冒烟测试启动")
+    assert os.path.exists(log_path), f"日志文件未创建：{log_path}"
     conn = open_database(tmp_db)
     win = MainWindow(conn)
     win.show()

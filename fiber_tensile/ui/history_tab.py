@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import sqlite3
 
 from PySide6.QtCore import QDate, Qt, Signal
@@ -19,6 +20,9 @@ from ..data.repository import (
 )
 from .analysis_tab import export_batch_report
 from .dialogs import CompareDialog
+
+
+logger = logging.getLogger(__name__)
 
 
 class HistoryTab(QWidget):
@@ -228,6 +232,7 @@ class HistoryTab(QWidget):
             return
         for b in selected:
             delete_batch(self._conn, b.id)
+            logger.info(f"已删除批次「{b.batch_name}」(id={b.id})")
         self.refresh()
         self.data_changed.emit()
 
@@ -238,9 +243,11 @@ class HistoryTab(QWidget):
         try:
             n = recalculate_batch(self._conn, selected[0].id)
         except ValueError as e:
+            logger.warning(f"重新计算失败：{e}")
             QMessageBox.warning(self, "重新计算失败", str(e))
             return
         self._load_detail(selected[0])
+        logger.info(f"已重新计算批次「{selected[0].batch_name}」的 {n} 条数据")
         QMessageBox.information(self, "完成", f"已重新计算 {n} 条数据的强度。")
 
     def _export_selected(self, kind: str) -> None:

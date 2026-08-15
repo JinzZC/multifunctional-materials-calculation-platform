@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import sqlite3
 
 from PySide6.QtCore import Qt
@@ -16,6 +17,8 @@ from ..core.weibull import weibull_fit
 from ..data.repository import get_batch, get_strengths, list_batches
 
 UNSAVED = -1   # 批次组合框「当前未保存数据」的哨兵值
+
+logger = logging.getLogger(__name__)
 
 
 def export_batch_report(parent: QWidget, batch: Batch, strengths: list, kind: str) -> None:
@@ -47,8 +50,10 @@ def export_batch_report(parent: QWidget, batch: Batch, strengths: list, kind: st
         else:
             export_pdf_report(path, batch, stats, weibull)
     except Exception as e:  # noqa: BLE001 — 导出异常一律提示给用户
+        logger.warning(f"导出 {kind} 报告失败：{e}")
         QMessageBox.critical(parent, "导出失败", str(e))
         return
+    logger.info(f"已导出 {kind} 报告：{path}（批次「{batch.batch_name}」）")
     QMessageBox.information(parent, "导出成功", f"报告已保存到：\n{path}")
 
 

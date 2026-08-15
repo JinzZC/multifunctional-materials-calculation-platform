@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import logging
 import sqlite3
+
+logger = logging.getLogger(__name__)
 
 from PySide6.QtCore import QDate, Qt, Signal
 from PySide6.QtWidgets import (
@@ -282,6 +285,7 @@ class EntryTab(QWidget):
         try:
             if result["append_batch_id"] is not None:
                 n = add_samples(self._conn, result["append_batch_id"], result["samples"])
+                logger.info(f"导入追加 {n} 条数据到批次 id={result['append_batch_id']}")
                 QMessageBox.information(self, "导入完成", f"已追加 {n} 条数据到现有批次。")
             else:
                 batch = Batch(
@@ -292,9 +296,11 @@ class EntryTab(QWidget):
                 bid = create_batch(self._conn, batch)
                 n = add_samples(self._conn, bid, result["samples"])
                 self.saved.emit(bid)
+                logger.info(f"导入新建批次「{batch.batch_name}」(id={bid})，{n} 条数据")
                 QMessageBox.information(
                     self, "导入完成", f"已新建批次「{batch.batch_name}」并导入 {n} 条数据。")
         except ValueError as e:
+            logger.warning(f"导入失败：{e}")
             QMessageBox.warning(self, "导入失败", str(e))
             return
         self.data_changed.emit()
@@ -319,12 +325,14 @@ class EntryTab(QWidget):
             bid = create_batch(self._conn, batch)
             n = add_samples(self._conn, bid, self._pending)
         except ValueError as e:
+            logger.warning(f"保存失败：{e}")
             QMessageBox.warning(self, "保存失败", str(e))
             return
         self._table.setRowCount(0)
         self._pending.clear()
         self.saved.emit(bid)
         self.data_changed.emit()
+        logger.info(f"已保存 {n} 条数据到批次「{name}」(id={bid})")
         QMessageBox.information(self, "保存成功", f"已保存 {n} 条数据到批次「{name}」。")
 
     def _download_template(self) -> None:
