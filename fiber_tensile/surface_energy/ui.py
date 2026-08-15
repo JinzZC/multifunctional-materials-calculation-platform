@@ -237,6 +237,7 @@ class SurfaceEnergyTab(QWidget):
         hh.setSectionResizeMode(QHeaderView.Interactive)
         hh.setStretchLastSection(True)
         self._history.setColumnWidth(0, 180)
+        hh.resizeSections(QHeaderView.ResizeToContents)   # 列宽按表头内容自适应
         hw_layout.addWidget(self._history)
         h_buttons = QHBoxLayout()
         self._btn_delete_hist = QPushButton("删除记录")

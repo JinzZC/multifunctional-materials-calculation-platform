@@ -72,23 +72,33 @@ class HtmlHeaderView(QHeaderView):
     """以 HTML 富文本渲染表头文字的表头视图（支持真上下标）。
 
     文字颜色/字体取自 HeaderItem 的 ForegroundRole/FontRole（setForeground/
-    setFont 依然生效）；背景固定为浅蓝、带边框。
+    setFont 依然生效）；背景固定为浅蓝、带边框。列宽不足时退化为纯文本并
+    以省略号截断，避免文字被硬性裁切。
     """
 
-    def _doc_for(self, logical_index: int) -> QTextDocument:
-        text = str(self.model().headerData(
+    def _text(self, logical_index: int) -> str:
+        return str(self.model().headerData(
             logical_index, self.orientation(), Qt.DisplayRole) or "")
-        font = self.model().headerData(
+
+    def _font(self, logical_index: int):
+        return self.model().headerData(
             logical_index, self.orientation(), Qt.FontRole) or self.font()
+
+    def _color(self, logical_index: int) -> QColor:
         color = self.model().headerData(
             logical_index, self.orientation(), Qt.ForegroundRole)
         if color is None:
-            color = QColor("#1F4E79")
-        elif not isinstance(color, QColor):
-            color = QColor(color.color())   # QBrush → QColor
+            return QColor("#1F4E79")
+        if isinstance(color, QColor):
+            return color
+        return QColor(color.color())   # QBrush → QColor
+
+    def _doc_for(self, logical_index: int) -> QTextDocument:
         doc = QTextDocument()
-        doc.setDefaultFont(font)
-        doc.setHtml(f'<div align="center" style="color:{color.name()}">{text}</div>')
+        doc.setDefaultFont(self._font(logical_index))
+        doc.setHtml(f'<div align="center" style="color:'
+                    f'"{self._color(logical_index).name()}">'
+                    f"{self._text(logical_index)}</div>")
         return doc
 
     def paintSection(self, painter, rect, logical_index: int) -> None:
@@ -97,12 +107,23 @@ class HtmlHeaderView(QHeaderView):
         painter.setPen(QColor("#B0B0B0"))
         painter.drawRect(rect.adjusted(0, 0, -1, -1))
         doc = self._doc_for(logical_index)
-        painter.translate(
-            rect.left() + 4,
-            rect.top() + max(0, int((rect.height() - doc.size().height()) / 2)))
-        painter.setClipRect(rect.adjusted(3, 2, -3, -2))
-        ctx = QAbstractTextDocumentLayout.PaintContext()
-        doc.documentLayout().draw(painter, ctx)
+        avail_w = rect.width() - 8
+        if doc.size().width() <= avail_w:
+            painter.translate(
+                rect.left() + 4,
+                rect.top() + max(0, int((rect.height() - doc.size().height()) / 2)))
+            painter.setClipRect(rect.adjusted(3, 2, -3, -2))
+            ctx = QAbstractTextDocumentLayout.PaintContext()
+            doc.documentLayout().draw(painter, ctx)
+        else:
+            # 列宽不足：退化为纯文本 + 省略号
+            from PySide6.QtGui import QFontMetrics
+            plain = re.sub(r"<[^>]+>", "", self._text(logical_index))
+            elided = QFontMetrics(self._font(logical_index)).elidedText(
+                plain, Qt.ElideRight, avail_w)
+            painter.setPen(self._color(logical_index))
+            painter.drawText(rect.adjusted(4, 0, -4, 0),
+                             Qt.AlignCenter | Qt.AlignVCenter, elided)
         painter.restore()
 
     def sectionSizeFromContents(self, logical_index: int) -> QSize:

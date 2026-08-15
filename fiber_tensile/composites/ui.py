@@ -94,6 +94,7 @@ class CompositesTab(QWidget):
         hh.setStretchLastSection(True)
         self._history.setColumnWidth(0, 100)
         self._history.setColumnWidth(1, 160)
+        hh.resizeSections(QHeaderView.ResizeToContents)   # 列宽按表头内容自适应
         root.addWidget(self._history, 2)
 
         h_buttons = QHBoxLayout()

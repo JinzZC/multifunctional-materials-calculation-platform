@@ -256,6 +256,9 @@ def main() -> int:
     # 孔隙率以百分比明确显示
     assert "孔隙率" in vf_text and "%" in vf_text, vf_text
     assert "孔隙率" in cm._history.horizontalHeaderItem(9).text()
+    # 历史表列宽按表头内容自适应（防止长表头被裁切）
+    assert cm._history.horizontalHeader().sectionSize(2) > 80
+    assert st._history.horizontalHeader().sectionSize(2) > 80
     win._nav.setCurrentRow(1)
     assert win._stack.currentIndex() == 1
     win._nav.setCurrentRow(0)
