@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+
+# 构建产物
+build/
+dist/
+*.spec
+
+# 生成的测试数据与报告
+test_data/
+
+# 日志
+*.log
