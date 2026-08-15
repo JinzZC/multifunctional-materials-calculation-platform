@@ -7,6 +7,7 @@ import os
 import sqlite3
 
 from PySide6.QtCore import QDate, Qt
+from PySide6.QtGui import QColor
 from PySide6.QtWidgets import (
     QAbstractItemView, QDateEdit, QDoubleSpinBox, QFileDialog, QFormLayout,
     QGroupBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMessageBox,
@@ -15,7 +16,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..ui import prefs
-from ..ui.richtext import equation_line_html
+from ..ui.richtext import HtmlHeaderView, equation_line_html, to_rich
 from .core import compute_rom, compute_vf_acid, compute_vf_density
 from .exporters import export_excel_report, export_pdf_report
 from .repository import (
@@ -77,18 +78,22 @@ class CompositesTab(QWidget):
         root.addWidget(tabs, 3)
 
         root.addWidget(QLabel("历史记录："))
-        self._history = QTableWidget(0, 8)
+        self._history = QTableWidget(0, 11)
         self._history.setHorizontalHeaderLabels(
-            ["类型", "样品名称", "E₁(GPa)", "E₂(GPa)", "G₁₂(GPa)", "ν₁₂", "ρ_c(g/cm³)",
-             "测试日期"])
+            [to_rich(h) for h in (
+                "类型", "样品名称", "纵向模量 E_1(GPa)", "横向模量 E_2(GPa)",
+                "剪切模量 G_12(GPa)", "主泊松比 ν_12", "复合材料密度 ρ_c(g/cm³)",
+                "纤维体积分数 V_f", "基体体积分数 V_m", "孔隙率 V_v", "测试日期")])
         self._history.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self._history.setSelectionBehavior(QAbstractItemView.SelectRows)
         self._history.setSelectionMode(QAbstractItemView.SingleSelection)
         self._history.verticalHeader().setVisible(False)
-        self._history.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
-        self._history.horizontalHeader().setStretchLastSection(True)
+        self._history.setHorizontalHeader(HtmlHeaderView(Qt.Horizontal, self._history))
+        hh = self._history.horizontalHeader()
+        hh.setSectionResizeMode(QHeaderView.Interactive)
+        hh.setStretchLastSection(True)
         self._history.setColumnWidth(0, 100)
-        self._history.setColumnWidth(1, 180)
+        self._history.setColumnWidth(1, 160)
         root.addWidget(self._history, 2)
 
         h_buttons = QHBoxLayout()
@@ -291,10 +296,12 @@ class CompositesTab(QWidget):
         except ValueError as e:
             QMessageBox.warning(self, "计算失败", str(e))
             return
-        self._rom_lbl.setText(
-            f"E₁ = {result.e1_gpa:.2f} GPa　E₂ = {result.e2_gpa:.2f} GPa　"
-            f"G₁₂ = {result.g12_gpa:.2f} GPa　ν₁₂ = {result.nu12:.4f}　"
-            f"ρ_c = {result.rho_gcm3:.3f} g/cm³")
+        self._rom_lbl.setText(to_rich(
+            f"纵向模量 E_1 = {result.e1_gpa:.2f} GPa　"
+            f"横向模量 E_2 = {result.e2_gpa:.2f} GPa　"
+            f"剪切模量 G_12 = {result.g12_gpa:.2f} GPa　"
+            f"主泊松比 ν_12 = {result.nu12:.4f}　"
+            f"复合材料密度 ρ_c = {result.rho_gcm3:.3f} g/cm³"))
         self._txt_process.setHtml("<br>".join(result.steps))
         mid = create_rom(self._conn, name, inputs, result,
                          remark=self._edit_remark.text().strip() or None,
@@ -321,7 +328,9 @@ class CompositesTab(QWidget):
             except ValueError as e:
                 QMessageBox.warning(self, "计算失败", str(e))
                 return
-            self._vf_lbl.setText(f"V_f = {result.vf:.4f}　V_m = {result.vm:.4f}")
+            self._vf_lbl.setText(to_rich(
+                f"纤维体积分数 V_f = {result.vf:.4f}　"
+                f"基体体积分数 V_m = {result.vm:.4f}"))
             self._txt_process_vf.setHtml("<br>".join(result.steps))
             mid = create_vf(self._conn, name, inputs, result,
                             remark=self._vf_remark.text().strip() or None,
@@ -338,8 +347,12 @@ class CompositesTab(QWidget):
             except ValueError as e:
                 QMessageBox.warning(self, "计算失败", str(e))
                 return
-            self._vf_lbl.setText(
-                f"V_f = {result.vf:.4f}　V_m = {result.vm:.4f}　V_v = {result.vv:.4f}")
+            # 孔隙率突出显示：百分比 + 红色加粗
+            self._vf_lbl.setText(to_rich(
+                f"纤维体积分数 V_f = {result.vf:.4f}　"
+                f"基体体积分数 V_m = {result.vm:.4f}　"
+                f"孔隙率 V_v = <span style=\"color:#C0504D; font-weight:bold;\">"
+                f"{result.vv * 100:.2f}%</span>"))
             self._txt_process_vf.setHtml("<br>".join(result.steps))
             mid = create_vf(self._conn, name, inputs, result,
                             remark=self._vf_remark.text().strip() or None,
@@ -354,6 +367,7 @@ class CompositesTab(QWidget):
         rows = list_cm_calcs(self._conn)
         self._history.setRowCount(len(rows))
         for r, row in enumerate(rows):
+            vv = row["vv"]
             values = [
                 _TYPE_LABELS[row["calc_type"]], row["sample_name"],
                 f"{row['e1_gpa']:.2f}" if row["e1_gpa"] is not None else "—",
@@ -361,12 +375,18 @@ class CompositesTab(QWidget):
                 f"{row['g12_gpa']:.2f}" if row["g12_gpa"] is not None else "—",
                 f"{row['nu12']:.4f}" if row["nu12"] is not None else "—",
                 f"{row['rho_gcm3']:.3f}" if row["rho_gcm3"] is not None else "—",
+                f"{row['vf']:.4f}" if row["vf"] is not None else "—",
+                f"{row['vm']:.4f}" if row["vm"] is not None else "—",
+                # 孔隙率以百分比明确显示；非零时红色突出
+                f"{vv * 100:.2f}%" if vv is not None else "—",
                 row["test_date"] or "—",
             ]
             for c, v in enumerate(values):
                 item = QTableWidgetItem(v)
                 if c >= 2:
                     item.setTextAlignment(Qt.AlignCenter)
+                if c == 9 and vv is not None and vv > 0.0005:
+                    item.setForeground(QColor("#C0504D"))
                 self._history.setItem(r, c, item)
         self._history_rows = rows
 
@@ -418,7 +438,8 @@ class CompositesTab(QWidget):
                                             i["ρ_m(g/cm³)"])
             pairs = [("纤维体积分数 V_f", f"{result.vf:.4f}"),
                      ("基体体积分数 V_m", f"{result.vm:.4f}"),
-                     ("孔隙率 V_v", f"{result.vv:.4f}" if result.vv is not None else "—")]
+                     ("孔隙率 V_v", f"{result.vv * 100:.3f}%"
+                      if result.vv is not None else "—")]
         start = prefs.last_dir()
         default = os.path.join(start, f"{row['sample_name']}_复合材料计算.{kind}") \
             if start else f"{row['sample_name']}_复合材料计算.{kind}"

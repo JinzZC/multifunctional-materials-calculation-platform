@@ -158,8 +158,12 @@ def main() -> int:
     st._table.removeRow(2)                                   # 删掉多余行，保留两种液体
     st._save()
     assert st._history.rowCount() == 1
-    assert st._lbl_gt.text().startswith("总表面能（γ_S）：19.50"), st._lbl_gt.text()
-    assert st._lbl_gd.text().startswith("色散分量（γ^d）："), st._lbl_gd.text()
+    # 结果标签与表头中的 γ 上下标以真上下标（富文本）显示
+    gt = st._lbl_gt.text()
+    assert "总表面能（" in gt and "19.50" in gt and "<sub>S</sub>" in gt, gt
+    gd = st._lbl_gd.text()
+    assert "色散分量（" in gd and "<sup>d</sup>" in gd, gd
+    assert "<sup>d</sup>" in st._table.horizontalHeaderItem(3).text()
     assert st._per_table.rowCount() == 2
     process_text = st._txt_process.toPlainText()
     assert "计算过程（OWRK" in process_text and "最小二乘" in process_text, process_text
@@ -238,14 +242,20 @@ def main() -> int:
     cm._edit_sample_name.setText("冒烟-ROM")
     cm._save_rom()
     assert cm._history.rowCount() == 1
-    assert "139.40" in cm._rom_lbl.text(), cm._rom_lbl.text()
+    assert "139.40" in cm._rom_lbl.text() and "纵向模量" in cm._rom_lbl.text(), \
+        cm._rom_lbl.text()
+    assert "纵向模量" in cm._history.horizontalHeaderItem(2).text()
     cm._vf_radio_acid.setChecked(True)
     cm._vf_sample.setText("冒烟-VF")
     cm._vf_wf.setValue(0.65)
     cm._vf_rhoc.setValue(1.5)
     cm._save_vf()
     assert cm._history.rowCount() == 2
-    assert "V_f = 0.5587" in cm._vf_lbl.text(), cm._vf_lbl.text()
+    vf_text = cm._vf_lbl.text()
+    assert "纤维体积分数" in vf_text and "0.5587" in vf_text, vf_text
+    # 孔隙率以百分比明确显示
+    assert "孔隙率" in vf_text and "%" in vf_text, vf_text
+    assert "孔隙率" in cm._history.horizontalHeaderItem(9).text()
     win._nav.setCurrentRow(1)
     assert win._stack.currentIndex() == 1
     win._nav.setCurrentRow(0)

@@ -41,7 +41,7 @@ logger = logging.getLogger(__name__)
 COL_NAME, COL_ANGLE, COL_GAMMA, COL_GD, COL_GP = range(5)
 
 # 公式富文本助手（真上下标、分数形式）与符号说明
-from ..ui.richtext import equation_line_html, to_rich
+from ..ui.richtext import HtmlHeaderView, equation_line_html, to_rich
 
 _SYMBOL_LEGEND = (
     '<span style="color:#888; font-size:8.5pt;">符号说明：γ＝表面张力/表面能；'
@@ -138,14 +138,16 @@ class SurfaceEnergyTab(QWidget):
         liquid_header.addWidget(self._btn_delete_row)
         root.addLayout(liquid_header)
         self._table = QTableWidget(0, 5)
+        # 表头用富文本渲染：γ 的上下标以真上下标显示
         self._table.setHorizontalHeaderLabels(
-            ["液体名称", "接触角 θ（度）", "γ_L（表面张力, mN/m）",
-             "γ^d（色散分量, mN/m）", "γ^p（极性分量, mN/m）"])
+            [to_rich(h) for h in ("液体名称", "接触角 θ（度）", "γ_L（表面张力, mN/m）",
+                                  "γ^d（色散分量, mN/m）", "γ^p（极性分量, mN/m）")])
         self._table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self._table.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self._table.verticalHeader().setVisible(False)
+        self._table.setHorizontalHeader(HtmlHeaderView(Qt.Horizontal, self._table))
         self._table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
-        # 接触角列视觉突出
+        # 接触角列视觉突出（HtmlHeaderView 读取 ForegroundRole/FontRole）
         angle_header = self._table.horizontalHeaderItem(COL_ANGLE)
         angle_header.setForeground(QColor("#1F4E79"))
         font = QFont()
@@ -175,18 +177,19 @@ class SurfaceEnergyTab(QWidget):
 
         result_box = QGroupBox("④ 计算结果")
         r_layout = QVBoxLayout(result_box)
-        self._lbl_gd = QLabel("色散分量（γ^d）：—")
-        self._lbl_gp = QLabel("极性分量（γ^p）：—")
-        self._lbl_gt = QLabel("总表面能（γ_S）：—")
-        self._lbl_gc = QLabel("临界表面张力（γ_c）：—")
+        self._lbl_gd = QLabel(to_rich("色散分量（γ^d）：—"))
+        self._lbl_gp = QLabel(to_rich("极性分量（γ^p）：—"))
+        self._lbl_gt = QLabel(to_rich("总表面能（γ_S）：—"))
+        self._lbl_gc = QLabel(to_rich("临界表面张力（γ_c）：—"))
         self._lbl_r2 = QLabel("拟合优度（R²）：—")
         for lbl in (self._lbl_gd, self._lbl_gp, self._lbl_gt, self._lbl_gc, self._lbl_r2):
             r_layout.addWidget(lbl)
         self._per_table = QTableWidget(0, 3)
         self._per_table.setHorizontalHeaderLabels(
-            ["液体名称", "γ_SL（界面能, mN/m）", "W_A（粘附功, mN/m）"])
+            [to_rich(h) for h in ("液体名称", "γ_SL（界面能, mN/m）", "W_A（粘附功, mN/m）")])
         self._per_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self._per_table.verticalHeader().setVisible(False)
+        self._per_table.setHorizontalHeader(HtmlHeaderView(Qt.Horizontal, self._per_table))
         self._per_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         r_layout.addWidget(self._per_table, 1)
         # Zisman 图（占位，首次绘制时才加载 matplotlib）
@@ -221,15 +224,18 @@ class SurfaceEnergyTab(QWidget):
         hw_layout.addWidget(QLabel("⑤ 历史记录："))
         self._history = QTableWidget(0, 8)
         self._history.setHorizontalHeaderLabels(
-            ["样品名称", "方法", "γ^d（色散分量, mN/m）", "γ^p（极性分量, mN/m）",
-             "γ_S（总表面能, mN/m）", "γ_c（临界表面张力, mN/m）", "R²（拟合优度）",
-             "测试日期"])
+            [to_rich(h) for h in ("样品名称", "方法", "γ^d（色散分量, mN/m）",
+                                  "γ^p（极性分量, mN/m）", "γ_S（总表面能, mN/m）",
+                                  "γ_c（临界表面张力, mN/m）", "R²（拟合优度）",
+                                  "测试日期")])
         self._history.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self._history.setSelectionBehavior(QAbstractItemView.SelectRows)
         self._history.setSelectionMode(QAbstractItemView.SingleSelection)
         self._history.verticalHeader().setVisible(False)
-        self._history.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
-        self._history.horizontalHeader().setStretchLastSection(True)
+        self._history.setHorizontalHeader(HtmlHeaderView(Qt.Horizontal, self._history))
+        hh = self._history.horizontalHeader()
+        hh.setSectionResizeMode(QHeaderView.Interactive)
+        hh.setStretchLastSection(True)
         self._history.setColumnWidth(0, 180)
         hw_layout.addWidget(self._history)
         h_buttons = QHBoxLayout()
@@ -377,17 +383,17 @@ class SurfaceEnergyTab(QWidget):
 
     def _show_result(self, result) -> None:
         self._lbl_gd.setText(
-            f"色散分量（γ^d）：{result.gamma_d:.2f} mN/m" if result.gamma_d is not None
-            else "色散分量（γ^d）：—")
+            to_rich(f"色散分量（γ^d）：{result.gamma_d:.2f} mN/m") if result.gamma_d is not None
+            else to_rich("色散分量（γ^d）：—"))
         self._lbl_gp.setText(
-            f"极性分量（γ^p）：{result.gamma_p:.2f} mN/m" if result.gamma_p is not None
-            else "极性分量（γ^p）：—")
+            to_rich(f"极性分量（γ^p）：{result.gamma_p:.2f} mN/m") if result.gamma_p is not None
+            else to_rich("极性分量（γ^p）：—"))
         self._lbl_gt.setText(
-            f"总表面能（γ_S）：{result.gamma_total:.2f} mN/m" if result.gamma_total is not None
-            else "总表面能（γ_S）：—")
+            to_rich(f"总表面能（γ_S）：{result.gamma_total:.2f} mN/m") if result.gamma_total is not None
+            else to_rich("总表面能（γ_S）：—"))
         self._lbl_gc.setText(
-            f"临界表面张力（γ_c）：{result.gamma_c:.2f} mN/m" if result.gamma_c is not None
-            else "临界表面张力（γ_c）：—")
+            to_rich(f"临界表面张力（γ_c）：{result.gamma_c:.2f} mN/m") if result.gamma_c is not None
+            else to_rich("临界表面张力（γ_c）：—"))
         self._lbl_r2.setText(
             f"拟合优度（R²）：{result.r2:.4f}" if result.r2 is not None else "拟合优度（R²）：—")
         per = result.per_liquid or []
