@@ -20,7 +20,7 @@ from PySide6.QtWidgets import (
     QAbstractItemView, QComboBox, QDateEdit, QDialog, QDialogButtonBox,
     QDoubleSpinBox, QFileDialog, QFormLayout, QGroupBox, QHBoxLayout, QHeaderView,
     QLabel, QLineEdit, QMessageBox, QPlainTextEdit, QPushButton, QRadioButton,
-    QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
+    QScrollArea, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
 from ..fileio.importer import ImportFileError
@@ -70,12 +70,20 @@ class SurfaceEnergyTab(QWidget):
             self._radio_methods[key] = radio
             radio_row.addWidget(radio)
         m_layout.addLayout(radio_row)
+        # 公式展示区：可上下滚动
         self._lbl_equations = QLabel()
         self._lbl_equations.setWordWrap(True)
+        self._lbl_equations.setAlignment(Qt.AlignTop | Qt.AlignLeft)
         self._lbl_equations.setStyleSheet(
-            "font-size: 9pt; background: #FBFDFF; border: 1px solid #DDEBF7;"
-            "border-radius: 4px; padding: 6px;")
-        m_layout.addWidget(self._lbl_equations)
+            "font-size: 9pt; background: #FBFDFF; padding: 6px;")
+        self._scroll_equations = QScrollArea()
+        self._scroll_equations.setWidgetResizable(True)
+        self._scroll_equations.setWidget(self._lbl_equations)
+        self._scroll_equations.setStyleSheet(
+            "QScrollArea { border: 1px solid #DDEBF7; border-radius: 4px;"
+            "background: #FBFDFF; }")
+        self._scroll_equations.setMinimumHeight(130)
+        m_layout.addWidget(self._scroll_equations)
         self._lbl_hint = QLabel()
         self._lbl_hint.setWordWrap(True)
         self._lbl_hint.setStyleSheet("color: #1F4E79;")
@@ -120,7 +128,8 @@ class SurfaceEnergyTab(QWidget):
         root.addLayout(liquid_header)
         self._table = QTableWidget(0, 5)
         self._table.setHorizontalHeaderLabels(
-            ["液体名称", "接触角(°)", "γ_L(mN/m)", "γ^d(mN/m)", "γ^p(mN/m)"])
+            ["液体名称", "接触角 θ（度）", "γ_L（表面张力, mN/m）",
+             "γ^d（色散分量, mN/m）", "γ^p（极性分量, mN/m）"])
         self._table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self._table.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self._table.verticalHeader().setVisible(False)
@@ -141,16 +150,16 @@ class SurfaceEnergyTab(QWidget):
 
         result_box = QGroupBox("④ 计算结果")
         r_layout = QVBoxLayout(result_box)
-        self._lbl_gd = QLabel("色散分量：—")
-        self._lbl_gp = QLabel("极性分量：—")
-        self._lbl_gt = QLabel("总表面能：—")
-        self._lbl_gc = QLabel("临界表面张力：—")
-        self._lbl_r2 = QLabel("拟合优度 R²：—")
+        self._lbl_gd = QLabel("色散分量（γ^d）：—")
+        self._lbl_gp = QLabel("极性分量（γ^p）：—")
+        self._lbl_gt = QLabel("总表面能（γ_S）：—")
+        self._lbl_gc = QLabel("临界表面张力（γ_c）：—")
+        self._lbl_r2 = QLabel("拟合优度（R²）：—")
         for lbl in (self._lbl_gd, self._lbl_gp, self._lbl_gt, self._lbl_gc, self._lbl_r2):
             r_layout.addWidget(lbl)
         self._per_table = QTableWidget(0, 3)
         self._per_table.setHorizontalHeaderLabels(
-            ["液体名称", "界面能(mN/m)", "粘附功(mN/m)"])
+            ["液体名称", "γ_SL（界面能, mN/m）", "W_A（粘附功, mN/m）"])
         self._per_table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self._per_table.verticalHeader().setVisible(False)
         self._per_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
@@ -182,7 +191,9 @@ class SurfaceEnergyTab(QWidget):
         root.addWidget(QLabel("⑤ 历史记录："))
         self._history = QTableWidget(0, 8)
         self._history.setHorizontalHeaderLabels(
-            ["样品名称", "方法", "γ^d", "γ^p", "γ_S", "γ_c", "R²", "测试日期"])
+            ["样品名称", "方法", "γ^d（色散分量, mN/m）", "γ^p（极性分量, mN/m）",
+             "γ_S（总表面能, mN/m）", "γ_c（临界表面张力, mN/m）", "R²（拟合优度）",
+             "测试日期"])
         self._history.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self._history.setSelectionBehavior(QAbstractItemView.SelectRows)
         self._history.setSelectionMode(QAbstractItemView.SingleSelection)
@@ -325,19 +336,19 @@ class SurfaceEnergyTab(QWidget):
 
     def _show_result(self, result) -> None:
         self._lbl_gd.setText(
-            f"色散分量：{result.gamma_d:.2f} mN/m" if result.gamma_d is not None
-            else "色散分量：—")
+            f"色散分量（γ^d）：{result.gamma_d:.2f} mN/m" if result.gamma_d is not None
+            else "色散分量（γ^d）：—")
         self._lbl_gp.setText(
-            f"极性分量：{result.gamma_p:.2f} mN/m" if result.gamma_p is not None
-            else "极性分量：—")
+            f"极性分量（γ^p）：{result.gamma_p:.2f} mN/m" if result.gamma_p is not None
+            else "极性分量（γ^p）：—")
         self._lbl_gt.setText(
-            f"总表面能：{result.gamma_total:.2f} mN/m" if result.gamma_total is not None
-            else "总表面能：—")
+            f"总表面能（γ_S）：{result.gamma_total:.2f} mN/m" if result.gamma_total is not None
+            else "总表面能（γ_S）：—")
         self._lbl_gc.setText(
-            f"临界表面张力：{result.gamma_c:.2f} mN/m" if result.gamma_c is not None
-            else "临界表面张力：—")
+            f"临界表面张力（γ_c）：{result.gamma_c:.2f} mN/m" if result.gamma_c is not None
+            else "临界表面张力（γ_c）：—")
         self._lbl_r2.setText(
-            f"拟合优度 R²：{result.r2:.4f}" if result.r2 is not None else "拟合优度 R²：—")
+            f"拟合优度（R²）：{result.r2:.4f}" if result.r2 is not None else "拟合优度（R²）：—")
         per = result.per_liquid or []
         self._per_table.setRowCount(len(per))
         for r, (name, gamma_sl, wa) in enumerate(per):

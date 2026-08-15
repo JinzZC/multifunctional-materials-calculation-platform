@@ -134,7 +134,9 @@ def main() -> int:
     st._radio_methods["owrk"].setChecked(True)
     assert st._btn_add_row.text() == "添加液体"
     assert "液体表面张力 × (1 + cos接触角)" in st._lbl_equations.text(), st._lbl_equations.text()
-    assert st._table.horizontalHeaderItem(1).text() == "接触角(°)"
+    assert st._table.horizontalHeaderItem(1).text() == "接触角 θ（度）"
+    assert "色散分量" in st._table.horizontalHeaderItem(3).text()
+    assert "色散分量" in st._history.horizontalHeaderItem(2).text()
     st._edit_sample_name.setText("冒烟-PTFE")
     st._add_row()
     st._table.cellWidget(0, 0).setCurrentText("水")    # 从液体库选择 → 自动填充 γ 参数
@@ -145,7 +147,8 @@ def main() -> int:
     st._table.item(1, 1).setText("77")
     st._save()
     assert st._history.rowCount() == 1
-    assert st._lbl_gt.text().startswith("总表面能：19.50"), st._lbl_gt.text()
+    assert st._lbl_gt.text().startswith("总表面能（γ_S）：19.50"), st._lbl_gt.text()
+    assert st._lbl_gd.text().startswith("色散分量（γ^d）："), st._lbl_gd.text()
     assert st._per_table.rowCount() == 2
     process_text = st._txt_process.toPlainText()
     assert "计算过程（OWRK" in process_text and "最小二乘" in process_text, process_text

@@ -9,8 +9,9 @@ from datetime import datetime
 
 from .core import METHOD_LABELS, compute_surface_energy
 
-_SE_TABLE_HEADERS = ["液体名称", "γ_L(mN/m)", "γ^d(mN/m)", "γ^p(mN/m)", "接触角(°)"]
-_PER_HEADERS = ["液体名称", "界面能 γ_SL(mN/m)", "粘附功 W_A(mN/m)"]
+_SE_TABLE_HEADERS = ["液体名称", "γ_L（表面张力, mN/m）", "γ^d（色散分量, mN/m）",
+                     "γ^p（极性分量, mN/m）", "接触角 θ（度）"]
+_PER_HEADERS = ["液体名称", "γ_SL（界面能, mN/m）", "W_A（粘附功, mN/m）"]
 
 
 def _fmt(v, nd=2):
