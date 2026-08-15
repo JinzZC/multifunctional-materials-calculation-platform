@@ -188,8 +188,9 @@ def main() -> int:
 
     # 9. 模块导航栏：两个模块可切换并记忆
     assert win._nav.count() == 2
-    assert win._nav.item(0).text() == "纤维拉伸强度"
-    assert win._nav.item(1).text() == "表面能"
+    assert win._nav.item(0).text() == "纤维拉伸强度分析模块"
+    assert win._nav.item(1).text() == "接触角表面能模块"
+    assert "多功能计算平台" in win.windowTitle()
     win._nav.setCurrentRow(1)
     assert win._stack.currentIndex() == 1
     win._nav.setCurrentRow(0)

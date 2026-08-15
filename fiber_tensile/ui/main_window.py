@@ -54,12 +54,12 @@ class MainWindow(QMainWindow):
 
         # ---- 左侧模块导航栏 ----
         self._nav = QListWidget()
-        self._nav.setFixedWidth(150)
+        self._nav.setFixedWidth(175)
         self._nav.setStyleSheet(_NAV_STYLE)
-        self._nav.addItem(QListWidgetItem("纤维拉伸强度"))
-        self._nav.addItem(QListWidgetItem("表面能"))
+        self._nav.addItem(QListWidgetItem("纤维拉伸强度分析模块"))
+        self._nav.addItem(QListWidgetItem("接触角表面能模块"))
         self._nav.item(0).setToolTip("单丝/纺织纤维强度计算、统计与 Weibull 分析")
-        self._nav.item(1).setToolTip("OWRK/Wu/Fowkes/Zisman 表面能计算")
+        self._nav.item(1).setToolTip("接触角法测量固体表面能：OWRK/Wu/Fowkes/Zisman 计算")
         root.addWidget(self._nav)
 
         # ---- 右侧堆叠页面 ----
@@ -117,9 +117,10 @@ class MainWindow(QMainWindow):
             self, "关于",
             f"<b>{APP_NAME} v{APP_VERSION}</b><br><br>"
             "功能模块：<br>"
-            "· 纤维拉伸强度：σ = 4F/(πd²) 单丝模式（GB/T 31290）、"
+            "· 纤维拉伸强度分析模块：σ = 4F/(πd²) 单丝模式（GB/T 31290）、"
             "断裂强度 = F/线密度 纺织模式（GB/T 14337）、Weibull 分析<br>"
-            "· 表面能：OWRK 双液法 / Wu 调和平均法 / Fowkes 法 / Zisman 法<br><br>"
+            "· 接触角表面能模块：OWRK 双液法 / Wu 调和平均法 / Fowkes 法 / "
+            "Zisman 法<br><br>"
             "支持批量导入、Excel/PDF 报告导出。")
 
     def _on_data_saved(self, batch_id: int) -> None:

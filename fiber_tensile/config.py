@@ -12,8 +12,8 @@ from .core.modes import (  # noqa: F401 — 兼容旧导入路径
     RANGE_LINEAR_DENSITY_DTEX,
 )
 
-APP_NAME = "纤维拉伸强度分析工具"
-APP_VERSION = "0.1.0"
+APP_NAME = "多功能计算平台"
+APP_VERSION = "0.2.0"
 
 
 def default_db_path() -> str:
