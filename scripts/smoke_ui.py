@@ -256,9 +256,14 @@ def main() -> int:
     # 孔隙率以百分比明确显示
     assert "孔隙率" in vf_text and "%" in vf_text, vf_text
     assert "孔隙率" in cm._history.horizontalHeaderItem(9).text()
-    # 历史表列宽按表头内容自适应（防止长表头被裁切）
-    assert cm._history.horizontalHeader().sectionSize(2) > 80
+    # 历史表列宽按表头内容自适应（防止长表头被裁切；复材为两行式表头）
+    assert cm._history.horizontalHeader().sectionSize(2) >= 60
     assert st._history.horizontalHeader().sectionSize(2) > 80
+    # 复材历史全部列在默认窗口内可见（无需横向滚动）
+    total = sum(cm._history.horizontalHeader().sectionSize(c)
+                for c in range(cm._history.columnCount()))
+    assert total - cm._history.horizontalHeader().sectionSize(
+        cm._history.columnCount() - 1) + 72 <= 1000
     win._nav.setCurrentRow(1)
     assert win._stack.currentIndex() == 1
     win._nav.setCurrentRow(0)

@@ -7,8 +7,8 @@ HeaderItem 的 ForegroundRole/FontRole）。
 
 import re
 
-from PySide6.QtCore import QSize, Qt
-from PySide6.QtGui import QAbstractTextDocumentLayout, QColor, QTextDocument
+from PySide6.QtCore import QRectF, QSize, Qt
+from PySide6.QtGui import QColor, QTextDocument
 from PySide6.QtWidgets import QHeaderView
 
 # 符号记号（γ_S^d 等）→ Qt 富文本真上下标
@@ -109,12 +109,12 @@ class HtmlHeaderView(QHeaderView):
         doc = self._doc_for(logical_index)
         avail_w = rect.width() - 8
         if doc.size().width() <= avail_w:
+            # 注意顺序：先用表头坐标系的 rect 裁剪，再平移绘制
+            painter.setClipRect(rect.adjusted(3, 2, -3, -2))
             painter.translate(
                 rect.left() + 4,
                 rect.top() + max(0, int((rect.height() - doc.size().height()) / 2)))
-            painter.setClipRect(rect.adjusted(3, 2, -3, -2))
-            ctx = QAbstractTextDocumentLayout.PaintContext()
-            doc.documentLayout().draw(painter, ctx)
+            doc.drawContents(painter, QRectF(0, 0, avail_w, doc.size().height()))
         else:
             # 列宽不足：退化为纯文本 + 省略号
             from PySide6.QtGui import QFontMetrics
@@ -126,16 +126,23 @@ class HtmlHeaderView(QHeaderView):
                              Qt.AlignCenter | Qt.AlignVCenter, elided)
         painter.restore()
 
+    def _max_doc_height(self) -> int:
+        m = 0
+        for i in range(self.count()):
+            m = max(m, int(self._doc_for(i).size().height()))
+        return m
+
     def sectionSizeFromContents(self, logical_index: int) -> QSize:
         # 注意：不能调用基类实现——QHeaderView 的默认实现会回调
         # sizeHint/sectionSizeFromContents 造成无限递归
         doc = self._doc_for(logical_index)
         return QSize(int(doc.size().width()) + 16,
-                     max(self.defaultSectionSize(), 32))
+                     max(int(doc.size().height()) + 6, 30))
 
     def sizeHint(self) -> QSize:
-        # 同样不能调用基类实现（递归风险），直接累加各列宽度
+        # 同样不能调用基类实现（递归风险），直接累加各列宽度；
+        # 高度按最高表头内容自适应（支持两行表头）
         total = 0
         for i in range(self.count()):
             total += self.sectionSizeFromContents(i).width()
-        return QSize(max(total, 100), 32)
+        return QSize(max(total, 100), max(self._max_doc_height() + 6, 30))

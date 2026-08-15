@@ -79,11 +79,13 @@ class CompositesTab(QWidget):
 
         root.addWidget(QLabel("历史记录："))
         self._history = QTableWidget(0, 11)
+        # 两行式表头：中文含义 + 符号，列宽紧凑，全部列无需横向滚动即可见
         self._history.setHorizontalHeaderLabels(
             [to_rich(h) for h in (
-                "类型", "样品名称", "纵向模量 E_1(GPa)", "横向模量 E_2(GPa)",
-                "剪切模量 G_12(GPa)", "主泊松比 ν_12", "复合材料密度 ρ_c(g/cm³)",
-                "纤维体积分数 V_f", "基体体积分数 V_m", "孔隙率 V_v", "测试日期")])
+                "类型", "样品名称", "纵向模量<br>E_1(GPa)", "横向模量<br>E_2(GPa)",
+                "剪切模量<br>G_12(GPa)", "主泊松比<br>ν_12", "复合材料密度<br>ρ_c(g/cm³)",
+                "纤维体积分数<br>V_f", "基体体积分数<br>V_m", "孔隙率<br>V_v",
+                "测试日期")])
         self._history.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self._history.setSelectionBehavior(QAbstractItemView.SelectRows)
         self._history.setSelectionMode(QAbstractItemView.SingleSelection)
