@@ -5,7 +5,7 @@ $ErrorActionPreference = 'Stop'
 $verifyDb = Join-Path $env:TEMP 'fiber_verify.db'
 Remove-Item $verifyDb -ErrorAction SilentlyContinue
 $env:FT_DB_PATH = $verifyDb          # child process inherits this
-$p = Start-Process -FilePath 'dist\FiberTensileAnalyzer.exe' -PassThru
+$p = Start-Process -FilePath 'dist\FiberTensileAnalyzer\FiberTensileAnalyzer.exe' -PassThru
 Start-Sleep -Seconds 15
 $alive = -not $p.HasExited
 Write-Output ("process_alive: " + $alive)
