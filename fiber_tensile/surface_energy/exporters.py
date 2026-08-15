@@ -113,6 +113,14 @@ def export_excel_report(path, sample_name: str, method: str, points: list,
         img.height = 400
         ws.add_image(img, "D2")
     row += 1
+    if result.steps:
+        c = ws.cell(row, 1, "计算过程")
+        c.font = Font(bold=True, size=12)
+        row += 1
+        for line in result.steps:
+            ws.cell(row, 1, line)
+            row += 1
+        row += 1
     c = ws.cell(row, 1, "液体数据")
     c.font = Font(bold=True, size=12)
     row += 1
@@ -189,12 +197,18 @@ def export_pdf_report(path, sample_name: str, method: str, points: list,
         plt.close(fig)
         story.append(Spacer(1, 0.3 * cm))
         story.append(Image(buf, width=14 * cm, height=10 * cm))
-    story.append(p("三、液体数据", h2))
+    story.append(p("三、计算过程", h2))
+    if result.steps:
+        for line in result.steps:
+            story.append(p(line))
+    else:
+        story.append(p("（无）"))
+    story.append(p("四、液体数据", h2))
     story.append(Table([[p(h, cell) for h in _SE_TABLE_HEADERS]]
                        + [[p(v, cell) for v in r] for r in liquid_rows],
                        colWidths=[3.5 * cm] + [2.9 * cm] * 4, style=grid))
     if per_rows:
-        story.append(p("四、各液体界面能与粘附功", h2))
+        story.append(p("五、各液体界面能与粘附功", h2))
         story.append(Table([[p(h, cell) for h in _PER_HEADERS]]
                            + [[p(v, cell) for v in r] for r in per_rows],
                            colWidths=[4 * cm, 5.5 * cm, 5.5 * cm], style=grid))

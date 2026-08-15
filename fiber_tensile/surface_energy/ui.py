@@ -14,8 +14,8 @@ from PySide6.QtCore import QDate, Qt
 from PySide6.QtWidgets import (
     QAbstractItemView, QComboBox, QDateEdit, QDialog, QDialogButtonBox,
     QDoubleSpinBox, QFileDialog, QFormLayout, QGroupBox, QHBoxLayout, QHeaderView,
-    QLabel, QLineEdit, QMessageBox, QPushButton, QRadioButton, QTableWidget,
-    QTableWidgetItem, QVBoxLayout, QWidget,
+    QLabel, QLineEdit, QMessageBox, QPlainTextEdit, QPushButton, QRadioButton,
+    QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
 from ..fileio.importer import ImportFileError
@@ -54,13 +54,23 @@ class SurfaceEnergyTab(QWidget):
         left = QVBoxLayout()
 
         method_box = QGroupBox("计算方法")
-        m_layout = QHBoxLayout(method_box)
+        m_layout = QVBoxLayout(method_box)
+        radio_row = QHBoxLayout()
         self._radio_methods: dict[str, QRadioButton] = {}
         for i, (key, spec) in enumerate(METHODS.items()):
             radio = QRadioButton(spec.label)
             radio.setChecked(i == 0)
             self._radio_methods[key] = radio
-            m_layout.addWidget(radio)
+            radio_row.addWidget(radio)
+        m_layout.addLayout(radio_row)
+        # 当前方法的计算公式
+        self._lbl_equations = QLabel()
+        self._lbl_equations.setWordWrap(True)
+        self._lbl_equations.setStyleSheet(
+            "font-family: Consolas, 'Microsoft YaHei'; font-size: 9pt;"
+            "background: #FBFDFF; border: 1px solid #DDEBF7;"
+            "border-radius: 4px; padding: 6px;")
+        m_layout.addWidget(self._lbl_equations)
         left.addWidget(method_box)
 
         info_box = QGroupBox("样品信息")
@@ -122,6 +132,17 @@ class SurfaceEnergyTab(QWidget):
         r_layout.addWidget(self._figure_container)
         left.addWidget(result_box, 1)
 
+        # 计算过程面板
+        process_box = QGroupBox("计算过程")
+        p_layout = QVBoxLayout(process_box)
+        self._txt_process = QPlainTextEdit()
+        self._txt_process.setReadOnly(True)
+        self._txt_process.setPlaceholderText("点击「计算并保存」后在此显示逐步计算过程")
+        self._txt_process.setStyleSheet(
+            "font-family: Consolas, 'Microsoft YaHei'; font-size: 9pt;")
+        p_layout.addWidget(self._txt_process)
+        left.addWidget(process_box, 1)
+
         root.addLayout(left, 3)
 
         right = QVBoxLayout()
@@ -129,7 +150,7 @@ class SurfaceEnergyTab(QWidget):
         liquid_header = QHBoxLayout()
         liquid_header.addWidget(QLabel("液体数据（液体名称可从参数库选择自动填充，θ 为接触角）："))
         liquid_header.addStretch(1)
-        self._btn_add_row = QPushButton("添加行")
+        self._btn_add_row = QPushButton("添加液体")
         self._btn_delete_row = QPushButton("删除选中行")
         liquid_header.addWidget(self._btn_add_row)
         liquid_header.addWidget(self._btn_delete_row)
@@ -191,6 +212,7 @@ class SurfaceEnergyTab(QWidget):
     def _on_method_changed(self, *args) -> None:
         spec = get_method_spec(self._method())
         self._lbl_hint.setText(f"{spec.label}：{spec.hint}")
+        self._lbl_equations.setText(spec.equations)
         self._figure_container.setVisible(self._method() == "zisman")
 
     def _liquid_library(self) -> list:
@@ -307,6 +329,7 @@ class SurfaceEnergyTab(QWidget):
             values = [name, f"{gamma_sl:.2f}" if gamma_sl is not None else "—", f"{wa:.2f}"]
             for c, v in enumerate(values):
                 self._per_table.setItem(r, c, QTableWidgetItem(v))
+        self._txt_process.setPlainText("\n".join(result.steps))
         if self._method() == "zisman":
             self._draw_zisman(result)
 

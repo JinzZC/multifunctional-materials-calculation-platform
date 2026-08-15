@@ -151,3 +151,41 @@ def test_unknown_method_raises():
         get_method_spec("foobar")
     with pytest.raises(ValueError):
         compute_surface_energy("foobar", [WATER, DIIODOMETHANE])
+
+
+def test_method_equations_present():
+    for key, spec in METHODS.items():
+        assert spec.equations.strip(), f"{key} 缺少公式展示文本"
+
+
+def test_steps_generated_for_all_methods():
+    r_owrk = compute_owrk([WATER, DIIODOMETHANE])
+    assert any("最小二乘" in s for s in r_owrk.steps)
+    assert any("总表面能" in s for s in r_owrk.steps)
+
+    r_wu = compute_wu([WATER, DIIODOMETHANE])
+    assert any("迭代" in s for s in r_wu.steps)
+    assert any("残差" in s for s in r_wu.steps)
+
+    hexa = LiquidPoint("十六烷", 27.6, 46.0, gamma_d=27.6, gamma_p=0.0)
+    r_fowkes = compute_surface_energy(METHOD_FOWKES, [hexa])
+    assert any("公式" in s for s in r_fowkes.steps)
+
+    pts = [LiquidPoint(f"液{g:g}", g, math.degrees(math.acos(1.4 - 0.02 * g)))
+           for g in (30.0, 40.0, 50.0)]
+    r_z = compute_surface_energy(METHOD_ZISMAN, pts)
+    assert any("线性回归" in s for s in r_z.steps)
+    assert any("临界表面张力" in s for s in r_z.steps)
+
+
+def test_wu_per_liquid_uses_harmonic_formula():
+    """Wu 法的界面能应按调和平均公式计算（而非 OWRK 几何平均）。"""
+    r = compute_wu([WATER, DIIODOMETHANE])
+    for p, (name, gamma_sl, _) in zip([WATER, DIIODOMETHANE], r.per_liquid):
+        expected = (r.gamma_d + r.gamma_p + p.gamma_total
+                    - 4 * r.gamma_d * p.gamma_d / (r.gamma_d + p.gamma_d)
+                    - 4 * r.gamma_p * p.gamma_p / (r.gamma_p + p.gamma_p))
+        assert gamma_sl == pytest.approx(expected, rel=1e-9)
+    # 与 OWRK 几何平均公式的结果应不同（公式不同）
+    r_owrk = compute_owrk([WATER, DIIODOMETHANE])
+    assert r.per_liquid[0][1] != pytest.approx(r_owrk.per_liquid[0][1])

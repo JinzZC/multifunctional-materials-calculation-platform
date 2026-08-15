@@ -132,6 +132,8 @@ def main() -> int:
     # 7. 表面能模块：OWRK 计算保存 + 报告导出
     st = win.surface_tab
     st._radio_methods["owrk"].setChecked(True)
+    assert st._btn_add_row.text() == "添加液体"
+    assert "γ_L·(1+cosθ)" in st._lbl_equations.text(), st._lbl_equations.text()
     st._edit_sample_name.setText("冒烟-PTFE")
     st._add_row()
     st._table.cellWidget(0, 0).setCurrentText("水")    # 从液体库选择 → 自动填充 γ 参数
@@ -144,6 +146,8 @@ def main() -> int:
     assert st._history.rowCount() == 1
     assert st._lbl_gt.text().startswith("总表面能 γ_S：19.50"), st._lbl_gt.text()
     assert st._per_table.rowCount() == 2
+    process_text = st._txt_process.toPlainText()
+    assert "计算过程（OWRK" in process_text and "最小二乘" in process_text, process_text
 
     from fiber_tensile.surface_energy.exporters import (
         export_excel_report as se_xlsx, export_pdf_report as se_pdf)
@@ -176,6 +180,7 @@ def main() -> int:
     assert "20.00" in st._lbl_gc.text(), st._lbl_gc.text()
     canvas_texts = [t.get_text() for ax in st._canvas.fig.axes for t in ax.texts]
     assert any("临界表面张力" in t for t in canvas_texts), canvas_texts
+    assert "线性回归" in st._txt_process.toPlainText()
 
     # 9. 模块导航栏：两个模块可切换并记忆
     assert win._nav.count() == 2
