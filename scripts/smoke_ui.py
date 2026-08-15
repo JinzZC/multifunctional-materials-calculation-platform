@@ -86,6 +86,9 @@ def main() -> int:
     # Weibull 图上应包含拟合直线方程标注
     canvas_texts = [t.get_text() for ax in ana._canvas.fig.axes for t in ax.texts]
     assert any("拟合直线方程" in t and "y = " in t for t in canvas_texts), canvas_texts
+    # 图形操作工具栏按钮已中文化
+    toolbar_texts = [a.text() for a in ana._toolbar.actions() if a.text()]
+    assert "复位" in toolbar_texts and "保存图像" in toolbar_texts, toolbar_texts
 
     # 4. 导出两种报告（走与 UI 按钮相同的底层函数）
     batch = get_batch(conn, batches[0].id)

@@ -168,10 +168,11 @@ class AnalysisTab(QWidget):
             return
         from matplotlib.backends.backend_qtagg import NavigationToolbar2QT
 
-        from .weibull_plot import MplCanvas
+        from .weibull_plot import MplCanvas, localize_toolbar
 
         self._canvas = MplCanvas()
         self._toolbar = NavigationToolbar2QT(self._canvas, self)
+        localize_toolbar(self._toolbar)
         idx = self._weibull_layout.indexOf(self._canvas_placeholder)
         self._weibull_layout.removeWidget(self._canvas_placeholder)
         self._canvas_placeholder.deleteLater()
