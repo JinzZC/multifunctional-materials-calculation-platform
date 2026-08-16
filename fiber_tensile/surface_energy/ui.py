@@ -72,10 +72,22 @@ class SurfaceEnergyTab(QWidget):
     def _build_ui(self) -> None:
         root = QVBoxLayout(self)
 
-        # ---- 第一行：① 计算方法（白话公式） + ② 样品信息 ----
+        # ---- 第一行：左侧（样品信息 + 方法选择） / 右侧（计算方程）----
         top_row = QHBoxLayout()
 
-        method_box = QGroupBox("① 计算方法（公式如下）")
+        left_col = QVBoxLayout()
+        info_box = QGroupBox("② 样品信息")
+        form = QFormLayout(info_box)
+        self._edit_sample_name = QLineEdit()
+        self._edit_sample_name.setPlaceholderText("必填，如：PTFE 薄膜")
+        self._edit_remark = QLineEdit()
+        self._date_test = DateEditWithToday()
+        form.addRow("样品名称：", self._edit_sample_name)
+        form.addRow("备注：", self._edit_remark)
+        form.addRow("测试日期：", self._date_test)
+        left_col.addWidget(info_box)
+
+        method_box = QGroupBox("① 计算方法")
         m_layout = QVBoxLayout(method_box)
         radio_row = QHBoxLayout()
         self._radio_methods: dict[str, QRadioButton] = {}
@@ -85,7 +97,17 @@ class SurfaceEnergyTab(QWidget):
             self._radio_methods[key] = radio
             radio_row.addWidget(radio)
         m_layout.addLayout(radio_row)
-        # 公式展示区：可上下滚动
+        self._lbl_hint = QLabel()
+        self._lbl_hint.setWordWrap(True)
+        self._lbl_hint.setStyleSheet("color: #1F4E79;")
+        m_layout.addWidget(self._lbl_hint)
+        left_col.addWidget(method_box)
+        left_col.addStretch(1)
+        top_row.addLayout(left_col, 2)
+
+        # 右侧：所选方法的计算方程（大区域展示，可滚动）
+        eq_box = QGroupBox("计算方程（随所选方法切换）")
+        eq_lay = QVBoxLayout(eq_box)
         self._lbl_equations = QLabel()
         self._lbl_equations.setWordWrap(True)
         self._lbl_equations.setAlignment(Qt.AlignTop | Qt.AlignLeft)
@@ -97,24 +119,9 @@ class SurfaceEnergyTab(QWidget):
         self._scroll_equations.setStyleSheet(
             "QScrollArea { border: 1px solid #DDEBF7; border-radius: 4px;"
             "background: #FBFDFF; }")
-        self._scroll_equations.setMinimumHeight(130)
-        m_layout.addWidget(self._scroll_equations)
-        self._lbl_hint = QLabel()
-        self._lbl_hint.setWordWrap(True)
-        self._lbl_hint.setStyleSheet("color: #1F4E79;")
-        m_layout.addWidget(self._lbl_hint)
-        top_row.addWidget(method_box, 2)
-
-        info_box = QGroupBox("② 样品信息")
-        form = QFormLayout(info_box)
-        self._edit_sample_name = QLineEdit()
-        self._edit_sample_name.setPlaceholderText("必填，如：PTFE 薄膜")
-        self._edit_remark = QLineEdit()
-        self._date_test = DateEditWithToday()
-        form.addRow("样品名称：", self._edit_sample_name)
-        form.addRow("备注：", self._edit_remark)
-        form.addRow("测试日期：", self._date_test)
-        top_row.addWidget(info_box, 1)
+        self._scroll_equations.setMinimumHeight(190)
+        eq_lay.addWidget(self._scroll_equations)
+        top_row.addWidget(eq_box, 3)
         root.addLayout(top_row)
 
         # ---- 操作按钮 ----
