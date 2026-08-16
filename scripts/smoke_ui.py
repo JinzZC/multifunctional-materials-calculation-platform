@@ -224,6 +224,14 @@ def main() -> int:
     canvas_texts = [t.get_text() for ax in st._canvas.fig.axes for t in ax.texts]
     assert any("临界表面张力" in t for t in canvas_texts), canvas_texts
     assert "直线拟合" in st._txt_process.toPlainText()
+    # Zisman 图在独立窗格中完整可见（不被其他区域挤压）
+    app.processEvents()
+    app.processEvents()
+    assert st._figure_pane.isVisible()
+    assert st._canvas.isVisible() and st._canvas.height() >= 150
+    # 切回其他方法时图窗格隐藏
+    st._radio_methods["owrk"].setChecked(True)
+    assert not st._figure_pane.isVisible()
 
     # 9. 模块导航栏：三个模块可切换并记忆，模块名过长自动换行
     assert win._nav.count() == 3

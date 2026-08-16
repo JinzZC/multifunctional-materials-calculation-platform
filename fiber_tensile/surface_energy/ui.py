@@ -158,7 +158,7 @@ class SurfaceEnergyTab(QWidget):
         angle_header.setFont(font)
         self._table.setColumnWidth(COL_NAME, 140)
         self._table.setColumnWidth(COL_ANGLE, 110)
-        self._table.setMinimumHeight(150)
+        self._table.setMinimumHeight(120)
 
         # ---- ③④⑤ 三个区块用可拖拽分隔条连接 ----
         splitter = QSplitter(Qt.Vertical)
@@ -195,7 +195,12 @@ class SurfaceEnergyTab(QWidget):
         self._per_table.setHorizontalHeader(HtmlHeaderView(Qt.Horizontal, self._per_table))
         self._per_table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         r_layout.addWidget(self._per_table, 1)
-        # Zisman 图（占位，首次绘制时才加载 matplotlib）
+        result_row.addWidget(result_box)
+
+        # Zisman 图独立窗格（仅 Zisman 法显示），保证图形完整显示
+        self._figure_pane = QWidget()
+        fp_layout = QVBoxLayout(self._figure_pane)
+        fp_layout.setContentsMargins(0, 0, 0, 0)
         self._figure_container = QWidget()
         f_layout = QVBoxLayout(self._figure_container)
         f_layout.setContentsMargins(0, 0, 0, 0)
@@ -203,9 +208,8 @@ class SurfaceEnergyTab(QWidget):
         self._canvas_placeholder.setAlignment(Qt.AlignCenter)
         self._canvas_placeholder.setStyleSheet("color: #888;")
         f_layout.addWidget(self._canvas_placeholder)
-        self._figure_container.setVisible(False)
-        r_layout.addWidget(self._figure_container)
-        result_row.addWidget(result_box)
+        fp_layout.addWidget(self._figure_container)
+        result_row.addWidget(self._figure_pane)
 
         process_box = QGroupBox("计算过程")
         p_layout = QVBoxLayout(process_box)
@@ -216,7 +220,7 @@ class SurfaceEnergyTab(QWidget):
             "font-family: Consolas, 'Microsoft YaHei'; font-size: 9.5pt;")
         p_layout.addWidget(self._txt_process)
         result_row.addWidget(process_box)
-        result_row.setSizes([520, 520])
+        result_row.setSizes([340, 440, 340])
         rw_layout.addWidget(result_row)
         splitter.addWidget(result_widget)
 
@@ -254,7 +258,10 @@ class SurfaceEnergyTab(QWidget):
         hw_layout.addLayout(h_buttons)
         splitter.addWidget(hist_widget)
 
-        splitter.setSizes([230, 300, 230])
+        splitter.setSizes([170, 300, 170])
+        splitter.setStretchFactor(0, 2)
+        splitter.setStretchFactor(1, 3)
+        splitter.setStretchFactor(2, 2)
         root.addWidget(splitter, 1)
 
     def _connect_signals(self) -> None:
@@ -288,7 +295,7 @@ class SurfaceEnergyTab(QWidget):
         equations_html = "<br>".join(
             equation_line_html(line) for line in spec.equations.split("\n"))
         self._lbl_equations.setText(equations_html + "<br>" + _SYMBOL_LEGEND)
-        self._figure_container.setVisible(self._method() == "zisman")
+        self._figure_pane.setVisible(self._method() == "zisman")
 
     def _liquid_library(self) -> list:
         return list_liquids(self._conn)
@@ -422,6 +429,7 @@ class SurfaceEnergyTab(QWidget):
         from ..ui.weibull_plot import ChineseNavigationToolbar, MplCanvas, localize_toolbar
 
         self._canvas = MplCanvas()
+        self._canvas.setMinimumSize(300, 200)   # 窗格内自适应，避免溢出裁剪
         self._toolbar = ChineseNavigationToolbar(self._canvas, self)
         localize_toolbar(self._toolbar)
         layout = self._figure_container.layout()
