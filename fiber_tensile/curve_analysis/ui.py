@@ -11,6 +11,7 @@ import os
 import sqlite3
 
 from PySide6.QtCore import QDate, Qt
+from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QAbstractItemView, QComboBox, QDateEdit, QDoubleSpinBox, QFileDialog,
     QFormLayout, QGroupBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit,
@@ -21,6 +22,7 @@ from PySide6.QtWidgets import (
 from ..config import sanitize_filename
 from ..fileio.importer import ImportFileError
 from ..ui import prefs
+from ..ui.csv_export import save_csv_dialog
 from ..ui.richtext import to_rich
 from .core import analyze_curve
 from .exporters import export_excel_report, export_pdf_report
@@ -64,12 +66,12 @@ class CurveAnalysisTab(QWidget):
         self._spin_gauge.setDecimals(1)
         self._spin_gauge.setValue(25.0)
         self._spin_fit_lo = QDoubleSpinBox()
-        self._spin_fit_lo.setRange(0.05, 0.5)
+        self._spin_fit_lo.setRange(0.05, 0.45)
         self._spin_fit_lo.setDecimals(2)
         self._spin_fit_lo.setSingleStep(0.05)
         self._spin_fit_lo.setValue(0.2)
         self._spin_fit_hi = QDoubleSpinBox()
-        self._spin_fit_hi.setRange(0.5, 0.95)
+        self._spin_fit_hi.setRange(0.55, 0.95)
         self._spin_fit_hi.setDecimals(2)
         self._spin_fit_hi.setSingleStep(0.05)
         self._spin_fit_hi.setValue(0.7)
@@ -122,6 +124,12 @@ class CurveAnalysisTab(QWidget):
         for lbl in (self._lbl_e, self._lbl_sigma, self._lbl_eps,
                     self._lbl_toe, self._lbl_r2):
             l_layout.addWidget(lbl)
+        # 非模态错误提示（参数调整过程中的失败不弹窗）
+        self._lbl_error = QLabel()
+        self._lbl_error.setWordWrap(True)
+        self._lbl_error.setStyleSheet("color: #C0504D;")
+        self._lbl_error.setVisible(False)
+        l_layout.addWidget(self._lbl_error)
         self._txt_process = QTextEdit()
         self._txt_process.setReadOnly(True)
         self._txt_process.setPlaceholderText("导入曲线后在此显示逐步计算过程")
@@ -159,7 +167,9 @@ class CurveAnalysisTab(QWidget):
         self._btn_delete = QPushButton("删除记录")
         self._btn_export_xlsx = QPushButton("导出 Excel 报告…")
         self._btn_export_pdf = QPushButton("导出 PDF 报告…")
-        for b in (self._btn_delete, self._btn_export_xlsx, self._btn_export_pdf):
+        self._btn_export_csv = QPushButton("导出 CSV 数据…")
+        for b in (self._btn_delete, self._btn_export_xlsx,
+                  self._btn_export_pdf, self._btn_export_csv):
             h_buttons.addWidget(b)
         h_buttons.addStretch(1)
         root.addLayout(h_buttons)
@@ -170,11 +180,16 @@ class CurveAnalysisTab(QWidget):
         self._btn_delete.clicked.connect(self._delete_history)
         self._btn_export_xlsx.clicked.connect(lambda: self._export_selected("xlsx"))
         self._btn_export_pdf.clicked.connect(lambda: self._export_selected("pdf"))
+        self._btn_export_csv.clicked.connect(self._export_csv)
         self._history.itemSelectionChanged.connect(self._update_button_states)
         self._spin_diameter.valueChanged.connect(self._reanalyze)
         self._spin_gauge.valueChanged.connect(self._reanalyze)
         self._spin_fit_lo.valueChanged.connect(self._reanalyze)
         self._spin_fit_hi.valueChanged.connect(self._reanalyze)
+        # 单位改动同样触发重算（保留导入时的原始数据）
+        self._combo_force_unit.currentTextChanged.connect(self._reanalyze)
+        self._combo_disp_unit.currentTextChanged.connect(self._reanalyze)
+        QShortcut(QKeySequence("Ctrl+S"), self, activated=self._save)
 
     # ---- 导入与分析 ----
 
@@ -191,32 +206,50 @@ class CurveAnalysisTab(QWidget):
         except (ImportFileError, ValueError) as e:
             QMessageBox.warning(self, "导入失败", str(e))
             return
-        # 单位换算：力→N，位移→mm
+        self._analyze_raw(disp_raw, force_raw)
+
+    def _scales(self) -> tuple:
         f_scale = {"N": 1.0, "cN": 0.01, "mN": 0.001}[self._combo_force_unit.currentText()]
         d_scale = {"mm": 1.0, "μm": 0.001}[self._combo_disp_unit.currentText()]
-        disp = [d * d_scale for d in disp_raw]
-        force = [f * f_scale for f in force_raw]
-        self._analyze(disp, force)
+        return d_scale, f_scale
 
-    def _analyze(self, disp_mm, force_n) -> None:
+    def _convert(self, disp_raw, force_raw) -> tuple:
+        d_scale, f_scale = self._scales()
+        return [d * d_scale for d in disp_raw], [f * f_scale for f in force_raw]
+
+    def _analyze_raw(self, disp_raw, force_raw) -> None:
+        """按当前单位换算原始数据后分析。"""
+        disp, force = self._convert(disp_raw, force_raw)
+        self._analyze(disp, force, raw=(disp_raw, force_raw))
+
+    def _analyze(self, disp_mm, force_n, raw=None) -> None:
         try:
             result = analyze_curve(
                 disp_mm, force_n, self._spin_diameter.value(),
                 self._spin_gauge.value(),
                 fit_lo=self._spin_fit_lo.value(), fit_hi=self._spin_fit_hi.value())
         except ValueError as e:
-            QMessageBox.warning(self, "分析失败", str(e))
+            # 非模态错误提示（参数拖动过程中不弹窗打断）
+            self._last = None
+            self._lbl_error.setText(str(e))
+            self._lbl_error.setVisible(True)
+            self._lbl_e.setText("弹性模量 E：—")
+            self._lbl_sigma.setText("断裂强度 σ_b：—")
+            self._lbl_eps.setText("断裂伸长率（校正后）：—")
+            self._lbl_toe.setText("平台段应变（已校正）：—")
+            self._lbl_r2.setText("拟合优度 R²：—")
             return
-        self._last = (disp_mm, force_n, result,
+        self._last = (raw if raw is not None else (disp_mm, force_n), result,
                       self._spin_fit_lo.value(), self._spin_fit_hi.value())
+        self._lbl_error.setVisible(False)
         self._show_result(result)
 
     def _reanalyze(self, *args) -> None:
-        """参数调整后自动重算（已有曲线时）。"""
+        """参数/单位调整后自动重算（已有曲线时）。"""
         if self._last is None:
             return
-        disp, force, _, _, _ = self._last
-        self._analyze(disp, force)
+        (disp_raw, force_raw), _, _, _ = self._last
+        self._analyze_raw(disp_raw, force_raw)
 
     def _show_result(self, result) -> None:
         self._lbl_e.setText(f"弹性模量 E = {result.e_gpa:.2f} GPa")
@@ -249,7 +282,8 @@ class CurveAnalysisTab(QWidget):
 
     def _draw_curve(self, result) -> None:
         self._ensure_canvas()
-        disp, force, _, _, _ = self._last
+        (disp_raw, force_raw), _, _, _ = self._last
+        disp, force = self._convert(disp_raw, force_raw)
         self._build_curve_figure(disp, force, result, fig=self._canvas.fig)
         self._canvas.draw()
 
@@ -263,7 +297,8 @@ class CurveAnalysisTab(QWidget):
         if not sample_name:
             QMessageBox.warning(self, "无法保存", "请先填写样品名称。")
             return
-        disp, force, result, fit_lo, fit_hi = self._last
+        (disp_raw, force_raw), result, fit_lo, fit_hi = self._last
+        disp, force = self._convert(disp_raw, force_raw)
         mid = create_curve_analysis(
             self._conn, sample_name, self._spin_diameter.value(),
             self._spin_gauge.value(), result, disp, force,
@@ -297,6 +332,9 @@ class CurveAnalysisTab(QWidget):
                     item.setTextAlignment(Qt.AlignCenter)
                 self._history.setItem(r, c, item)
         self._history_rows = rows
+        # 刷新后清除选中，避免行号错位导致误删/误导出
+        self._history.clearSelection()
+        self._update_button_states()
 
     def _selected_id(self):
         indexes = self._history.selectedIndexes()
@@ -307,7 +345,8 @@ class CurveAnalysisTab(QWidget):
     def _update_button_states(self) -> None:
         """历史操作按钮跟随选中状态启用/禁用。"""
         has = self._selected_id() is not None
-        for btn in (self._btn_delete, self._btn_export_xlsx, self._btn_export_pdf):
+        for btn in (self._btn_delete, self._btn_export_xlsx,
+                    self._btn_export_pdf, self._btn_export_csv):
             btn.setEnabled(has)
 
     def _delete_history(self) -> None:
@@ -315,8 +354,10 @@ class CurveAnalysisTab(QWidget):
         if cid is None:
             QMessageBox.information(self, "提示", "请先在历史记录中选择一条记录。")
             return
-        if QMessageBox.question(self, "确认删除", "确定删除选中的曲线分析记录？") \
-                != QMessageBox.Yes:
+        row = next(r for r in self._history_rows if r["id"] == cid)
+        if QMessageBox.question(self, "确认删除",
+                                f"确定删除样品「{row['sample_name']}」的曲线分析记录？"
+                                "此操作不可恢复。") != QMessageBox.Yes:
             return
         delete_curve_analysis(self._conn, cid)
         self.refresh_history()
@@ -364,3 +405,17 @@ class CurveAnalysisTab(QWidget):
             return
         logger.info(f"已导出曲线分析 {kind} 报告：{path}")
         QMessageBox.information(self, "导出成功", f"报告已保存到：\n{path}")
+
+    def _export_csv(self) -> None:
+        """把选中记录的原始曲线数据导出为 CSV。"""
+        cid = self._selected_id()
+        if cid is None:
+            return
+        try:
+            row, points = get_curve_analysis(self._conn, cid)
+        except ValueError as e:
+            QMessageBox.warning(self, "导出失败", str(e))
+            return
+        headers = ["位移(mm)", "力(N)"]
+        rows = [[f"{x:g}", f"{y:g}"] for x, y in points]
+        save_csv_dialog(self, f"{row['sample_name']}_拉伸曲线", headers, rows)

@@ -111,6 +111,7 @@ class AnalysisTab(QWidget):
         self._lbl_sigma0 = QLabel("特征强度 σ₀：—")
         self._lbl_r2 = QLabel("拟合优度 R²：—")
         for lbl in (self._lbl_m, self._lbl_sigma0, self._lbl_r2):
+            lbl.setWordWrap(True)
             w_layout.addWidget(lbl)
         # 画布延迟创建：matplotlib 只在首次绘制时加载，加快应用启动
         self._canvas = None
@@ -130,6 +131,8 @@ class AnalysisTab(QWidget):
         bottom = QHBoxLayout()
         self._btn_excel = QPushButton("导出 Excel 报告…")
         self._btn_pdf = QPushButton("导出 PDF 报告…")
+        self._btn_excel.setEnabled(False)
+        self._btn_pdf.setEnabled(False)
         self._btn_excel.clicked.connect(lambda: self._export("xlsx"))
         self._btn_pdf.clicked.connect(lambda: self._export("pdf"))
         bottom.addStretch(1)
@@ -195,6 +198,10 @@ class AnalysisTab(QWidget):
             stats = batch_statistics(strengths)
         except ValueError:
             stats = None
+        # 导出按钮跟随是否有数据
+        has_data = bool(strengths)
+        self._btn_excel.setEnabled(has_data)
+        self._btn_pdf.setEnabled(has_data)
         rows = []
         if stats is not None:
             rows = [
@@ -205,6 +212,8 @@ class AnalysisTab(QWidget):
                 (f"最小值({unit})", f"{stats.min_val:.2f}"),
                 (f"最大值({unit})", f"{stats.max_val:.2f}"),
             ]
+        else:
+            rows = [("（该批次无数据）", "")]
         self._stats_table.setRowCount(len(rows))
         for r, (k, v) in enumerate(rows):
             self._stats_table.setItem(r, 0, QTableWidgetItem(k))
@@ -215,7 +224,8 @@ class AnalysisTab(QWidget):
         except ValueError as e:
             self._lbl_m.setText("Weibull 模数 m：—")
             self._lbl_sigma0.setText("特征强度 σ₀：—")
-            self._lbl_r2.setText("拟合优度 R²：—")
+            # 把失败原因直接展示给用户（而非吞掉）
+            self._lbl_r2.setText(f"无法拟合：{e}")
             if self._canvas is not None:
                 self._canvas.fig.clf()
                 self._canvas.draw()

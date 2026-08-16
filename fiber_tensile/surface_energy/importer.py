@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from ..core.models import RowError
-from ..fileio.importer import ImportFileError, read_table
+from ..fileio.importer import ImportFileError, parse_decimal_text, read_table
 from .core import LiquidPoint, METHODS
 
 _HEADER_ALIASES = {
@@ -93,9 +93,8 @@ def _parse_number(raw, column, row_number, errors, required=True, allow_zero=Fal
     if isinstance(raw, (int, float)) and not isinstance(raw, bool):
         value = float(raw)
     else:
-        text = unicodedata.normalize("NFKC", str(raw)).strip().replace(",", "")
         try:
-            value = float(text)
+            value = float(parse_decimal_text(str(raw)))
         except ValueError:
             errors.append(RowError(row_number, f"{column}不是有效数字", column, raw))
             return None

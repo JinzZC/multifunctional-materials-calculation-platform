@@ -99,7 +99,8 @@ def export_pdf_report(path, sample_name, diameter_um, gauge_mm, result,
     ])
 
     def p(text, style=body):
-        return Paragraph(str(text), style)
+        import html as _html
+        return Paragraph(_html.escape(str(text)), style)
 
     info, results, steps = _build_rows(sample_name, diameter_um, gauge_mm,
                                        result, remark, test_date)

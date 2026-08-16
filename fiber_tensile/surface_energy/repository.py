@@ -92,9 +92,12 @@ def add_liquid(conn: sqlite3.Connection, name: str, gamma_total: float,
     name = (name or "").strip()
     if not name:
         raise ValueError("液体名称不能为空")
-    for label, v in (("总表面张力", gamma_total), ("色散分量", gamma_d), ("极性分量", gamma_p)):
-        if not isinstance(v, (int, float)) or v <= 0:
-            raise ValueError(f"{label}必须为正数")
+    if not isinstance(gamma_total, (int, float)) or gamma_total <= 0:
+        raise ValueError("总表面张力必须为正数")
+    # 分量为非负即可（非极性液体的极性分量为 0，如二碘甲烷/烷烃）
+    for label, v in (("色散分量", gamma_d), ("极性分量", gamma_p)):
+        if not isinstance(v, (int, float)) or v < 0:
+            raise ValueError(f"{label}不能为负数")
     if gamma_d + gamma_p > gamma_total + 1e-6:
         raise ValueError("分量之和不能大于总表面张力")
     try:

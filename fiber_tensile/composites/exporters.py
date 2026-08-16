@@ -77,7 +77,8 @@ def export_pdf_report(path, calc_type, sample_name, inputs,
     ])
 
     def p(text, style=body):
-        return Paragraph(str(text), style)
+        import html as _html
+        return Paragraph(_html.escape(str(text)), style)
 
     info, input_rows, result_pairs, steps = _build_sections(
         calc_type, sample_name, inputs, steps, result_pairs, remark, test_date)

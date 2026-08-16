@@ -81,6 +81,17 @@ def _is_blank(v) -> bool:
     return isinstance(v, str) and not v.strip()
 
 
+def parse_decimal_text(text: str) -> str:
+    """数字文本归一：逗号后只有 1-2 位数字视为欧式小数（0,5→0.5、12,34→12.34），
+    否则逗号按千分位剔除（1,234→1234）。"""
+    import re
+
+    t = unicodedata.normalize("NFKC", text).strip().replace(" ", "")
+    if re.fullmatch(r"\d+,\d{1,2}", t):
+        return t.replace(",", ".")
+    return t.replace(",", "")
+
+
 def _parse_text(raw) -> str | None:
     if raw is None or (isinstance(raw, float) and math.isnan(raw)):
         return None
@@ -97,10 +108,8 @@ def _parse_number(raw, column: str, row_number: int, errors: list) -> float | No
     if isinstance(raw, (int, float)) and not isinstance(raw, bool):
         value = float(raw)
     else:
-        text = unicodedata.normalize("NFKC", str(raw)).strip()
-        text = text.replace(",", "").replace(" ", "")
         try:
-            value = float(text)
+            value = float(parse_decimal_text(str(raw)))
         except ValueError:
             errors.append(RowError(row_number, f"{column}不是有效数字", column, raw))
             return None

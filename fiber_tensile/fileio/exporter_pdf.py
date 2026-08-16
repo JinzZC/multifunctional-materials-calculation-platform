@@ -15,9 +15,11 @@ _CJK = "STSong-Light"
 
 
 def _p(text, style) -> "Paragraph":
+    import html as _html
     from reportlab.platypus import Paragraph
 
-    return Paragraph(str(text), style)
+    # 转义用户文本中的 & < >，防止被 reportlab 当作标记解析
+    return Paragraph(_html.escape(str(text)), style)
 
 
 def export_pdf_report(path, batch, analysis=None, weibull=None) -> None:

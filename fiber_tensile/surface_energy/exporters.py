@@ -171,7 +171,8 @@ def export_pdf_report(path, sample_name: str, method: str, points: list,
     ])
 
     def p(text, style=body):
-        return Paragraph(str(text), style)
+        import html as _html
+        return Paragraph(_html.escape(str(text)), style)
 
     result = compute_surface_energy(method, points)
     result_rows, liquid_rows, per_rows = _build_data_tables(method, points, result)

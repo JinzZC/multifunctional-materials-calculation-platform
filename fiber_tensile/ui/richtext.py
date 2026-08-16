@@ -5,6 +5,7 @@ HtmlHeaderView：以 HTML 富文本渲染表头文字（真上下标、前景色
 HeaderItem 的 ForegroundRole/FontRole）。
 """
 
+import html
 import re
 
 from PySide6.QtCore import QRectF, QSize, Qt
@@ -25,10 +26,17 @@ _FRAC_RE = re.compile(r"⟨([^|⟩]*)\|([^⟩]*)⟩")
 
 
 def _apply_symbols(text: str) -> str:
-    """上下标记号 → 富文本（不处理分数）。"""
-    for pattern, repl in _RICH_RULES:
-        text = pattern.sub(repl, text)
-    return text
+    """上下标记号 → 富文本（不处理分数）。
+
+    先转义用户文本防止 <>& 注入；有意使用的 <br> 换行标签按段保留。
+    """
+    parts = text.split("<br>")
+    for i, part in enumerate(parts):
+        part = html.escape(part)
+        for pattern, repl in _RICH_RULES:
+            part = pattern.sub(repl, part)
+        parts[i] = part
+    return "<br>".join(parts)
 
 
 def _fraction_html(num: str, den: str) -> str:

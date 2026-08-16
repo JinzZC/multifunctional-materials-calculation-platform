@@ -8,7 +8,7 @@ import math
 import unicodedata
 from pathlib import Path
 
-from ..fileio.importer import ImportFileError, read_table
+from ..fileio.importer import ImportFileError, parse_decimal_text, read_table
 
 _HEADER_ALIASES = {
     "disp": {"位移", "位移(mm)", "位移(mm)", "伸长", "伸长量", "伸长(mm)",
@@ -59,9 +59,8 @@ def parse_curve_file(path) -> tuple:
                 return None
             if isinstance(v, (int, float)) and not isinstance(v, bool):
                 return float(v)
-            text = unicodedata.normalize("NFKC", str(v)).strip().replace(",", "")
             try:
-                return float(text)
+                return float(parse_decimal_text(str(v)))
             except ValueError:
                 raise ValueError(f"第 {row_number} 行 {label} 不是有效数字：{v!r}")
 

@@ -94,3 +94,11 @@ def test_add_liquid_validation(db_conn):
         add_liquid(db_conn, "坏液体2", 40.0, 30.0, 20.0)
     with pytest.raises(ValueError, match="名称"):
         add_liquid(db_conn, "  ", 40.0, 30.0, 10.0)
+
+
+def test_add_nonpolar_liquid_with_zero_polar(db_conn):
+    # 非极性液体（极性分量为 0）应能加入库，与内置库（二碘甲烷等）一致
+    lid = add_liquid(db_conn, "正十二烷", 25.4, 25.4, 0.0)
+    assert lid > 0
+    liquids = {l["name"]: l for l in list_liquids(db_conn)}
+    assert liquids["正十二烷"]["gamma_p"] == 0.0

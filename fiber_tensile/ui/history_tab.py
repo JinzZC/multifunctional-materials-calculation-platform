@@ -19,6 +19,7 @@ from ..data.repository import (
     delete_batch, get_batch, get_strengths, list_batches, recalculate_batch,
 )
 from .analysis_tab import export_batch_report
+from .csv_export import save_csv_dialog
 from .dialogs import CompareDialog
 
 
@@ -121,13 +122,15 @@ class HistoryTab(QWidget):
         self._btn_recalc = QPushButton("重新计算强度")
         self._btn_export_xlsx = QPushButton("导出 Excel 报告…")
         self._btn_export_pdf = QPushButton("导出 PDF 报告…")
+        self._btn_export_csv = QPushButton("导出 CSV 数据…")
         self._btn_compare.clicked.connect(self._compare)
         self._btn_delete.clicked.connect(self._delete_selected)
         self._btn_recalc.clicked.connect(self._recalculate)
         self._btn_export_xlsx.clicked.connect(lambda: self._export_selected("xlsx"))
         self._btn_export_pdf.clicked.connect(lambda: self._export_selected("pdf"))
+        self._btn_export_csv.clicked.connect(self._export_csv)
         for b in (self._btn_compare, self._btn_delete, self._btn_recalc,
-                  self._btn_export_xlsx, self._btn_export_pdf):
+                  self._btn_export_xlsx, self._btn_export_pdf, self._btn_export_csv):
             buttons.addWidget(b)
         buttons.addStretch(1)
         root.addLayout(buttons)
@@ -161,6 +164,8 @@ class HistoryTab(QWidget):
                     item.setTextAlignment(Qt.AlignCenter)
                 self._batch_table.setItem(r, c, item)
         self._detail_table.setRowCount(0)
+        # 刷新后清除选中，避免行号错位导致误删/误导出
+        self._batch_table.clearSelection()
         self._update_button_states()
 
     # ---- 选中与明细 ----
@@ -211,6 +216,7 @@ class HistoryTab(QWidget):
         self._btn_recalc.setEnabled(n == 1)
         self._btn_export_xlsx.setEnabled(n == 1)
         self._btn_export_pdf.setEnabled(n == 1)
+        self._btn_export_csv.setEnabled(n == 1)
 
     # ---- 操作 ----
 
@@ -271,3 +277,26 @@ class HistoryTab(QWidget):
         batch = get_batch(self._conn, selected[0].id)
         strengths = get_strengths(self._conn, selected[0].id)
         export_batch_report(self, batch, strengths, kind)
+
+    def _export_csv(self) -> None:
+        """把选中批次的样本明细导出为 CSV。"""
+        selected = self._selected_batches()
+        if len(selected) != 1:
+            return
+        batch = get_batch(self._conn, selected[0].id)
+        mode = batch.mode
+        unit = strength_unit_label(mode)
+        headers = ["编号", "断裂强力", "强力单位",
+                   "直径(μm)" if mode == MODE_FILAMENT else "线密度(dtex)",
+                   "密度(g/cm³)", f"强度({unit})", "强度(MPa)", "备注", "测试日期"]
+        rows = []
+        for s in batch.samples:
+            dim = s.diameter_um if mode == MODE_FILAMENT else s.linear_density_dtex
+            rows.append([
+                s.sample_no or "", f"{s.breaking_force:g}", s.force_unit, f"{dim:g}",
+                f"{batch.density:g}" if batch.density is not None else "",
+                f"{s.strength:.6g}" if s.strength is not None else "",
+                f"{s.strength_mpa:.6g}" if s.strength_mpa is not None else "",
+                s.remark or "", s.test_date or "",
+            ])
+        save_csv_dialog(self, f"{batch.batch_name}_数据", headers, rows)

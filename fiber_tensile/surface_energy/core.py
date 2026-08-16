@@ -285,8 +285,9 @@ def compute_fowkes(points: list) -> SurfaceEnergyResult:
     if len(points) != 1:
         raise ValueError(f"Fowkes 法需要恰好 1 种液体（当前 {len(points)} 种）")
     p = points[0]
-    if p.gamma_d is None:
-        raise ValueError(f"Fowkes 法需要液体的 γ^d 分量（液体「{p.liquid_name}」缺失）")
+    if p.gamma_d is None or p.gamma_d <= 0:
+        raise ValueError(f"Fowkes 法需要液体正的 γ^d 分量（液体「{p.liquid_name}」"
+                         f"γ^d={p.gamma_d}）")
     wa = _wa(p)
     steps = ["计算过程（Fowkes 法）",
              "公式：γ_S^d = ⟨[γ_L×(1+cosθ)]²|4×γ_L^d⟩",
@@ -297,7 +298,9 @@ def compute_fowkes(points: list) -> SurfaceEnergyResult:
              f"③ 总表面能：γ_S ≈ γ_S^d = {wa ** 2 / (4.0 * p.gamma_d):.2f} mN/m"
              "（Fowkes 法仅计算色散分量）"]
     gamma_d = wa ** 2 / (4.0 * p.gamma_d)
-    per = [(p.liquid_name, gamma_d, wa)]
+    # 界面能（几何平均，极性分量为 0）：γ_SL = γ_S^d + γ_L − 2√(γ_S^d·γ_L^d)
+    gamma_sl = gamma_d + p.gamma_total - 2.0 * math.sqrt(gamma_d * p.gamma_d)
+    per = [(p.liquid_name, gamma_sl, wa)]
     steps += _steps_per_liquid(points, per)
     return SurfaceEnergyResult(
         method=METHOD_FOWKES, gamma_d=gamma_d, gamma_p=None, gamma_total=gamma_d,

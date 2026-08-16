@@ -3,6 +3,8 @@
 import openpyxl
 import pytest
 
+from fiber_tensile.fileio.importer import parse_decimal_text
+
 from fiber_tensile.core.models import MODE_FILAMENT, MODE_TEXTILE
 from fiber_tensile.fileio.importer import ImportFileError, parse_file, read_table
 from fiber_tensile.fileio.template import generate_template
@@ -230,6 +232,18 @@ def test_missing_file_raises(tmp_path):
 
 
 # ---------- 模板 ----------
+
+def test_parse_decimal_text():
+    # 欧式小数逗号（逗号后 1-2 位数字）
+    assert parse_decimal_text("0,5") == "0.5"
+    assert parse_decimal_text("1,5") == "1.5"
+    assert parse_decimal_text("12,34") == "12.34"
+    # 千分位逗号（逗号后三位数字）
+    assert parse_decimal_text("1,234") == "1234"
+    assert parse_decimal_text("１２,３４５") == "12345"    # 全角归一
+    # 普通数字不受影响
+    assert parse_decimal_text("72.8") == "72.8"
+
 
 def test_template_generated_and_reimportable(tmp_path):
     p = tmp_path / "模板.xlsx"

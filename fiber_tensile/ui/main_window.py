@@ -116,6 +116,7 @@ class MainWindow(QMainWindow):
     def _build_menu(self) -> None:
         file_menu = self.menuBar().addMenu("文件(&F)")
         act_quit = QAction("退出(&Q)", self)
+        act_quit.setShortcut("Ctrl+Q")
         act_quit.triggered.connect(self.close)
         file_menu.addAction(act_quit)
 

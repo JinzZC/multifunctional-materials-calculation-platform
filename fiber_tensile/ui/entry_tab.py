@@ -11,6 +11,7 @@ import os
 import sqlite3
 
 from PySide6.QtCore import QDate, Qt, Signal
+from PySide6.QtGui import QKeySequence, QShortcut
 from PySide6.QtWidgets import (
     QAbstractItemView, QComboBox, QDateEdit, QDoubleSpinBox, QFileDialog, QFormLayout,
     QGroupBox, QHBoxLayout, QHeaderView, QLabel, QLineEdit, QMessageBox, QPushButton,
@@ -147,6 +148,7 @@ class EntryTab(QWidget):
         self._btn_delete_row = QPushButton("删除选中行")
         self._btn_save = QPushButton("保存到数据库")
         self._btn_save.setStyleSheet("font-weight: bold;")
+        self._btn_save.setToolTip("保存到数据库（Ctrl+S）")
         bottom.addWidget(self._btn_delete_row)
         bottom.addStretch(1)
         bottom.addWidget(self._btn_save)
@@ -174,6 +176,7 @@ class EntryTab(QWidget):
         self._btn_clear.clicked.connect(self._clear_table)
         self._btn_delete_row.clicked.connect(self._delete_selected_rows)
         self._btn_save.clicked.connect(self._save)
+        QShortcut(QKeySequence("Ctrl+S"), self, activated=self._save)
 
     # ---- 模式与预览 ----
 

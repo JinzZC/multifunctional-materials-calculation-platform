@@ -10,7 +10,7 @@ from PySide6.QtWidgets import (
     QVBoxLayout, QWidget,
 )
 
-from ..core.models import MODE_LABELS, strength_unit_label
+from ..core.models import MODE_LABELS, RowError, strength_unit_label
 from ..core.modes import MODES
 from ..data.repository import list_batches
 from ..fileio.importer import ImportFileError, parse_file
@@ -62,6 +62,13 @@ class ImportWizardDialog(QDialog):
                     continue
                 QMessageBox.critical(parent, "导入失败", str(e))
                 return None
+        # 文件含多种密度时提醒（密度参与纺织模式的 MPa 换算）
+        densities = {s.density_gcm3 for s in preview.samples
+                     if s.density_gcm3 is not None}
+        if len(densities) > 1:
+            preview.warnings.append(RowError(
+                1, f"文件含多种密度，批次密度将取 {min(densities):g}，请确认",
+                "density_gcm3"))
         dlg = ImportWizardDialog(conn, preview, Path(path).name, parent)
         if dlg.exec() != QDialog.Accepted:
             return None

@@ -15,7 +15,7 @@ import os
 import sqlite3
 
 from PySide6.QtCore import QDate, Qt
-from PySide6.QtGui import QColor, QFont
+from PySide6.QtGui import QColor, QFont, QKeySequence, QShortcut
 import re
 
 from PySide6.QtWidgets import (
@@ -26,8 +26,9 @@ from PySide6.QtWidgets import (
 )
 
 from ..config import sanitize_filename
-from ..fileio.importer import ImportFileError
+from ..fileio.importer import ImportFileError, parse_decimal_text
 from ..ui import prefs
+from ..ui.csv_export import save_csv_dialog
 from .core import METHOD_LABELS, METHODS, get_method_spec, LiquidPoint
 from .exporters import export_excel_report, export_pdf_report
 from .importer import parse_measurement_file
@@ -121,6 +122,7 @@ class SurfaceEnergyTab(QWidget):
         btn_row = QHBoxLayout()
         self._btn_save = QPushButton("计算并保存")
         self._btn_save.setStyleSheet("font-weight: bold;")
+        self._btn_save.setToolTip("计算并保存（Ctrl+S）")
         self._btn_import = QPushButton("批量导入…")
         self._btn_add_liquid = QPushButton("添加自定义液体…")
         self._btn_clear = QPushButton("清空表格")
@@ -245,7 +247,9 @@ class SurfaceEnergyTab(QWidget):
         self._btn_delete_hist = QPushButton("删除记录")
         self._btn_export_xlsx = QPushButton("导出 Excel 报告…")
         self._btn_export_pdf = QPushButton("导出 PDF 报告…")
-        for b in (self._btn_delete_hist, self._btn_export_xlsx, self._btn_export_pdf):
+        self._btn_export_csv = QPushButton("导出 CSV 数据…")
+        for b in (self._btn_delete_hist, self._btn_export_xlsx,
+                  self._btn_export_pdf, self._btn_export_csv):
             h_buttons.addWidget(b)
         h_buttons.addStretch(1)
         hw_layout.addLayout(h_buttons)
@@ -266,7 +270,9 @@ class SurfaceEnergyTab(QWidget):
         self._btn_delete_hist.clicked.connect(self._delete_history)
         self._btn_export_xlsx.clicked.connect(lambda: self._export_selected("xlsx"))
         self._btn_export_pdf.clicked.connect(lambda: self._export_selected("pdf"))
+        self._btn_export_csv.clicked.connect(self._export_csv)
         self._history.itemSelectionChanged.connect(self._update_button_states)
+        QShortcut(QKeySequence("Ctrl+S"), self, activated=self._save)
 
     # ---- 方法 / 液体库 ----
 
@@ -356,7 +362,7 @@ class SurfaceEnergyTab(QWidget):
                         raise ValueError(f"第 {row + 1} 行 {label} 为空")
                     return None
                 try:
-                    value = float(text.replace(",", ""))
+                    value = float(parse_decimal_text(text))
                 except ValueError:
                     raise ValueError(f"第 {row + 1} 行 {label} 不是有效数字：{text!r}") from None
                 if value < 0 or (value == 0 and not allow_zero):
@@ -485,6 +491,20 @@ class SurfaceEnergyTab(QWidget):
             QMessageBox.warning(self, "部分数据有误", f"以下行未导入：\n{lines}")
         if not preview.points:
             return
+        # 表格非空时让用户选择导入方式，避免两份样品的数据混算
+        if self._table.rowCount() > 0:
+            box = QMessageBox(self)
+            box.setWindowTitle("导入方式")
+            box.setText(f"当前表格已有 {self._table.rowCount()} 行液体数据，"
+                        "新导入的数据如何处理？")
+            btn_replace = box.addButton("清空后导入", QMessageBox.DestructiveRole)
+            btn_append = box.addButton("追加到末尾", QMessageBox.AcceptRole)
+            box.addButton("取消", QMessageBox.RejectRole)
+            box.exec()
+            if box.clickedButton() is None or box.clickedButton().text() == "取消":
+                return
+            if box.clickedButton() is btn_replace:
+                self._table.setRowCount(0)
         if preview.method:
             self._radio_methods[preview.method].setChecked(True)
         self._edit_sample_name.setText(preview.sample_name or "")
@@ -544,6 +564,9 @@ class SurfaceEnergyTab(QWidget):
                     item.setTextAlignment(Qt.AlignCenter)
                 self._history.setItem(r, c, item)
         self._history_rows = rows
+        # 刷新后清除选中，避免行号错位导致误删/误导出
+        self._history.clearSelection()
+        self._update_button_states()
 
     def _selected_history_id(self):
         indexes = self._history.selectedIndexes()
@@ -554,7 +577,8 @@ class SurfaceEnergyTab(QWidget):
     def _update_button_states(self) -> None:
         """历史操作按钮跟随选中状态启用/禁用。"""
         has = self._selected_history_id() is not None
-        for btn in (self._btn_delete_hist, self._btn_export_xlsx, self._btn_export_pdf):
+        for btn in (self._btn_delete_hist, self._btn_export_xlsx,
+                    self._btn_export_pdf, self._btn_export_csv):
             btn.setEnabled(has)
 
     def _delete_history(self) -> None:
@@ -562,7 +586,10 @@ class SurfaceEnergyTab(QWidget):
         if mid is None:
             QMessageBox.information(self, "提示", "请先在历史记录中选择一条记录。")
             return
-        if QMessageBox.question(self, "确认删除", "确定删除选中的测量记录？") != QMessageBox.Yes:
+        row = next(r for r in self._history_rows if r["id"] == mid)
+        if QMessageBox.question(self, "确认删除",
+                                f"确定删除样品「{row['sample_name']}」的测量记录？"
+                                "此操作不可恢复。") != QMessageBox.Yes:
             return
         delete_measurement(self._conn, mid)
         self.refresh_history()
@@ -599,6 +626,23 @@ class SurfaceEnergyTab(QWidget):
             return
         logger.info(f"已导出表面能 {kind} 报告：{path}")
         QMessageBox.information(self, "导出成功", f"报告已保存到：\n{path}")
+
+    def _export_csv(self) -> None:
+        """把选中测量的液体数据导出为 CSV。"""
+        mid = self._selected_history_id()
+        if mid is None:
+            return
+        try:
+            row, points = get_measurement(self._conn, mid)
+        except ValueError as e:
+            QMessageBox.warning(self, "导出失败", str(e))
+            return
+        headers = ["液体名称", "γ_L(mN/m)", "γ^d(mN/m)", "γ^p(mN/m)", "接触角(°)"]
+        rows = [[p.liquid_name, f"{p.gamma_total:g}",
+                 f"{p.gamma_d:g}" if p.gamma_d is not None else "",
+                 f"{p.gamma_p:g}" if p.gamma_p is not None else "",
+                 f"{p.angle_deg:g}"] for p in points]
+        save_csv_dialog(self, f"{row['sample_name']}_接触角数据", headers, rows)
 
 
 def result_summary(result) -> str:

@@ -100,6 +100,23 @@ def test_fowkes_point_count_enforced():
         compute_surface_energy(METHOD_FOWKES, [hexa, hexa])
 
 
+def test_fowkes_zero_gamma_d_raises():
+    # γ^d = 0 会导致除零，应给出明确 ValueError
+    bad = LiquidPoint("十六烷", 27.6, 46.0, gamma_d=0.0, gamma_p=0.0)
+    with pytest.raises(ValueError, match="正的 γ\\^d"):
+        compute_surface_energy(METHOD_FOWKES, [bad])
+
+
+def test_fowkes_per_liquid_interfacial_energy():
+    # Fowkes 界面能应为 γ_SL = γ_S^d + γ_L − 2√(γ_S^d·γ_L^d)，而非 γ_S^d 本身
+    hexa = LiquidPoint("十六烷", 27.6, 46.0, gamma_d=27.6, gamma_p=0.0)
+    r = compute_surface_energy(METHOD_FOWKES, [hexa])
+    name, gamma_sl, wa = r.per_liquid[0]
+    expected = r.gamma_d + 27.6 - 2 * math.sqrt(r.gamma_d * 27.6)
+    assert gamma_sl == pytest.approx(expected, rel=1e-9)
+    assert gamma_sl != pytest.approx(r.gamma_d)
+
+
 def test_zisman_synthetic():
     # 构造严格线性数据：cosθ = 1.4 − 0.02·γ_L → γ_c = 20
     points = []

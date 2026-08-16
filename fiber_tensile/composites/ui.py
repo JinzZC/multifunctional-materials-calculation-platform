@@ -341,6 +341,7 @@ class CompositesTab(QWidget):
             mid = create_vf(self._conn, name, inputs, result,
                             remark=self._vf_remark.text().strip() or None,
                             test_date=self._vf_date.date().toString("yyyy-MM-dd"))
+            summary = (f"V_f = {result.vf:.4f}，V_m = {result.vm:.4f}")
         else:
             inputs = {"w_f": self._vf_wf.value(),
                       "ρ_f(g/cm³)": self._vf_rhof.value(),
@@ -363,9 +364,11 @@ class CompositesTab(QWidget):
             mid = create_vf(self._conn, name, inputs, result,
                             remark=self._vf_remark.text().strip() or None,
                             test_date=self._vf_date.date().toString("yyyy-MM-dd"))
+            summary = (f"V_f = {result.vf:.4f}，V_m = {result.vm:.4f}，"
+                       f"V_v = {result.vv * 100:.2f}%")
         logger.info(f"已保存体积分数计算「{name}」(id={mid})")
         self.refresh_history()
-        QMessageBox.information(self, "保存成功", f"样品「{name}」已保存。\n{self._vf_lbl.text()}")
+        QMessageBox.information(self, "保存成功", f"样品「{name}」已保存。\n{summary}")
 
     # ---- 历史 / 导出 ----
 
@@ -395,6 +398,9 @@ class CompositesTab(QWidget):
                     item.setForeground(QColor("#C0504D"))
                 self._history.setItem(r, c, item)
         self._history_rows = rows
+        # 刷新后清除选中，避免行号错位导致误删/误导出
+        self._history.clearSelection()
+        self._update_button_states()
 
     def _selected_id(self):
         indexes = self._history.selectedIndexes()
@@ -413,8 +419,10 @@ class CompositesTab(QWidget):
         if cid is None:
             QMessageBox.information(self, "提示", "请先在历史记录中选择一条记录。")
             return
-        if QMessageBox.question(self, "确认删除", "确定删除选中的计算记录？") \
-                != QMessageBox.Yes:
+        row = next(r for r in self._history_rows if r["id"] == cid)
+        if QMessageBox.question(self, "确认删除",
+                                f"确定删除样品「{row['sample_name']}」的计算记录？"
+                                "此操作不可恢复。") != QMessageBox.Yes:
             return
         delete_cm_calc(self._conn, cid)
         self.refresh_history()
