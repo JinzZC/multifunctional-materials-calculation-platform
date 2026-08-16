@@ -45,6 +45,7 @@ class MainWindow(QMainWindow):
         self._conn = conn
         self.setWindowTitle(f"{APP_NAME} v{APP_VERSION}")
         self.resize(1180, 780)
+        self.setMinimumSize(940, 640)
         geometry = prefs.load_geometry()
         if geometry is not None:
             self.restoreGeometry(geometry)

@@ -123,9 +123,9 @@ py -3 scripts/smoke_ui.py
 ## 打包成 EXE
 
 ```bat
-:: 直接双击 scripts\build.bat，产出两种形态：
-::   文件夹版  dist\FiberTensileAnalyzer\FiberTensileAnalyzer.exe   启动快（1-3 秒），推荐日常使用
-::   单文件版  dist\FiberTensileAnalyzerOneFile.exe                 一个 exe 便携，但每次启动需自解压（5-10 秒）
+:: 直接双击 scripts\build.bat（内部调用 scripts\build.py 以支持中文名），产出两种形态：
+::   文件夹版  dist\多功能计算平台\多功能计算平台.exe   启动快（1-3 秒），推荐日常使用
+::   单文件版  dist\多功能计算平台单文件版.exe           一个 exe 便携，但每次启动需自解压（5-10 秒）
 ```
 
 程序已做启动优化：pandas/openpyxl/reportlab/matplotlib 全部按需加载（只在导入文件、导出报告、绘制图表时才加载），启动时只加载录入界面必需的组件。
@@ -135,8 +135,8 @@ py -3 scripts/smoke_ui.py
 **别人不需要安装 Python 或任何环境**——程序已把运行所需的全部组件打包进去，只需满足：
 
 - Windows 10 / 11 64 位系统（Win7 不支持）
-- 把 `dist\FiberTensileAnalyzer` 整个文件夹压缩成 zip 发给对方，解压后运行里面的 exe 即可（推荐：启动快）
-- 或直接发送单文件版 `FiberTensileAnalyzerOneFile.exe`（方便，但对方每次启动会慢几秒）
+- 把 `dist\多功能计算平台` 整个文件夹压缩成 zip 发给对方，解压后运行里面的 exe 即可（推荐：启动快）
+- 或直接发送单文件版 `多功能计算平台单文件版.exe`（方便，但对方每次启动会慢几秒）
 
 注意事项：
 

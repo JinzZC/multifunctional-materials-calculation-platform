@@ -65,6 +65,13 @@ def main() -> int:
     tab._radio_modes["filament"].setChecked(True)
     tab._spin_force.setValue(10.0)
     tab._spin_dim.setValue(7.0)
+    # 1c. 模式切换保留用户手动输入的维度值（非默认值不被重置）
+    tab._spin_dim.setValue(6.5)
+    tab._radio_modes["textile"].setChecked(True)
+    assert tab._spin_dim.value() == 6.5
+    tab._radio_modes["filament"].setChecked(True)
+    assert tab._spin_dim.value() == 6.5
+    tab._spin_dim.setValue(7.0)
     # 2. 录入 5 条数据并保存
     for f, d in [(10.0, 7.0), (9.5, 7.2), (10.8, 6.8), (9.0, 7.1), (10.2, 6.9)]:
         tab._spin_force.setValue(f)
@@ -165,6 +172,10 @@ def main() -> int:
     assert "色散分量（" in gd and "<sup>d</sup>" in gd, gd
     assert "<sup>d</sup>" in st._table.horizontalHeaderItem(3).text()
     assert st._per_table.rowCount() == 2
+    # 历史操作按钮跟随选中状态（未选中禁用、选中启用）
+    assert not st._btn_export_xlsx.isEnabled()
+    st._history.selectRow(0)
+    assert st._btn_export_xlsx.isEnabled()
     process_text = st._txt_process.toPlainText()
     assert "计算过程（OWRK" in process_text and "最小二乘" in process_text, process_text
     # 过程内公式带真上标（Qt 序列化为 vertical-align:super）

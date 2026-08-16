@@ -11,6 +11,7 @@ from PySide6.QtWidgets import (
     QPushButton, QSplitter, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
+from ..config import sanitize_filename
 from ..core.models import MODE_LABELS, Batch
 from ..core.modes import get_mode_spec, strength_unit_label
 from ..core.statistics import batch_statistics
@@ -44,8 +45,9 @@ def export_batch_report(parent: QWidget, batch: Batch, strengths: list, kind: st
         weibull = None
     ext = kind
     start = prefs.last_dir()
-    default = os.path.join(start, f"{batch.batch_name}_报告.{ext}") if start \
-        else f"{batch.batch_name}_报告.{ext}"
+    safe_name = sanitize_filename(batch.batch_name)
+    default = os.path.join(start, f"{safe_name}_报告.{ext}") if start \
+        else f"{safe_name}_报告.{ext}"
     path, _ = QFileDialog.getSaveFileName(
         parent, "导出报告", default, f"{ext.upper()} 文件 (*.{ext})")
     if not path:

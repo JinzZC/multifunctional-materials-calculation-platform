@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
     QSplitter, QTableWidget, QTableWidgetItem, QTextEdit, QVBoxLayout, QWidget,
 )
 
+from ..config import sanitize_filename
 from ..fileio.importer import ImportFileError
 from ..ui import prefs
 from .core import METHOD_LABELS, METHODS, get_method_spec, LiquidPoint
@@ -62,6 +63,7 @@ class SurfaceEnergyTab(QWidget):
         self._connect_signals()
         self._on_method_changed()
         self.refresh_history()
+        self._update_button_states()
 
     # ---- UI ----
 
@@ -264,6 +266,7 @@ class SurfaceEnergyTab(QWidget):
         self._btn_delete_hist.clicked.connect(self._delete_history)
         self._btn_export_xlsx.clicked.connect(lambda: self._export_selected("xlsx"))
         self._btn_export_pdf.clicked.connect(lambda: self._export_selected("pdf"))
+        self._history.itemSelectionChanged.connect(self._update_button_states)
 
     # ---- 方法 / 液体库 ----
 
@@ -548,6 +551,12 @@ class SurfaceEnergyTab(QWidget):
             return None
         return self._history_rows[indexes[0].row()]["id"]
 
+    def _update_button_states(self) -> None:
+        """历史操作按钮跟随选中状态启用/禁用。"""
+        has = self._selected_history_id() is not None
+        for btn in (self._btn_delete_hist, self._btn_export_xlsx, self._btn_export_pdf):
+            btn.setEnabled(has)
+
     def _delete_history(self) -> None:
         mid = self._selected_history_id()
         if mid is None:
@@ -569,8 +578,9 @@ class SurfaceEnergyTab(QWidget):
             QMessageBox.warning(self, "导出失败", str(e))
             return
         start = prefs.last_dir()
-        default = os.path.join(start, f"{row['sample_name']}_表面能报告.{kind}") if start \
-            else f"{row['sample_name']}_表面能报告.{kind}"
+        safe_name = sanitize_filename(row["sample_name"])
+        default = os.path.join(start, f"{safe_name}_表面能报告.{kind}") if start \
+            else f"{safe_name}_表面能报告.{kind}"
         path, _ = QFileDialog.getSaveFileName(
             self, "导出报告", default, f"{kind.upper()} 文件 (*.{kind})")
         if not path:

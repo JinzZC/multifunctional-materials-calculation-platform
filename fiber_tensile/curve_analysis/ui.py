@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
     QTextEdit, QVBoxLayout, QWidget,
 )
 
+from ..config import sanitize_filename
 from ..fileio.importer import ImportFileError
 from ..ui import prefs
 from ..ui.richtext import to_rich
@@ -44,6 +45,7 @@ class CurveAnalysisTab(QWidget):
         self._build_ui()
         self._connect_signals()
         self.refresh_history()
+        self._update_button_states()
 
     def _build_ui(self) -> None:
         root = QVBoxLayout(self)
@@ -168,6 +170,7 @@ class CurveAnalysisTab(QWidget):
         self._btn_delete.clicked.connect(self._delete_history)
         self._btn_export_xlsx.clicked.connect(lambda: self._export_selected("xlsx"))
         self._btn_export_pdf.clicked.connect(lambda: self._export_selected("pdf"))
+        self._history.itemSelectionChanged.connect(self._update_button_states)
         self._spin_diameter.valueChanged.connect(self._reanalyze)
         self._spin_gauge.valueChanged.connect(self._reanalyze)
         self._spin_fit_lo.valueChanged.connect(self._reanalyze)
@@ -301,6 +304,12 @@ class CurveAnalysisTab(QWidget):
             return None
         return self._history_rows[indexes[0].row()]["id"]
 
+    def _update_button_states(self) -> None:
+        """历史操作按钮跟随选中状态启用/禁用。"""
+        has = self._selected_id() is not None
+        for btn in (self._btn_delete, self._btn_export_xlsx, self._btn_export_pdf):
+            btn.setEnabled(has)
+
     def _delete_history(self) -> None:
         cid = self._selected_id()
         if cid is None:
@@ -332,8 +341,9 @@ class CurveAnalysisTab(QWidget):
             QMessageBox.warning(self, "导出失败", str(e))
             return
         start = prefs.last_dir()
-        default = os.path.join(start, f"{row['sample_name']}_曲线分析报告.{kind}") \
-            if start else f"{row['sample_name']}_曲线分析报告.{kind}"
+        safe_name = sanitize_filename(row["sample_name"])
+        default = os.path.join(start, f"{safe_name}_曲线分析报告.{kind}") \
+            if start else f"{safe_name}_曲线分析报告.{kind}"
         path, _ = QFileDialog.getSaveFileName(
             self, "导出报告", default, f"{kind.upper()} 文件 (*.{kind})")
         if not path:

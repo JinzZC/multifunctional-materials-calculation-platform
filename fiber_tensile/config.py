@@ -15,6 +15,16 @@ from .core.modes import (  # noqa: F401 — 兼容旧导入路径
 APP_NAME = "多功能计算平台"
 APP_VERSION = "0.2.0"
 
+# 文件名非法字符（Windows）：报告默认文件名需清理，避免导出失败
+_INVALID_FILENAME_CHARS = set('\\/:*?"<>|')
+
+
+def sanitize_filename(name: str, fallback: str = "报告") -> str:
+    """把样品/批次名中的文件系统非法字符替换为下划线，空名用 fallback。"""
+    cleaned = "".join("_" if ch in _INVALID_FILENAME_CHARS else ch
+                      for ch in (name or "").strip())
+    return cleaned or fallback
+
 
 def default_db_path() -> str:
     """数据库文件路径：%LOCALAPPDATA%\\FiberTensile\\fiber_tensile.db。

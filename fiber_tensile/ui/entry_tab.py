@@ -189,7 +189,13 @@ class EntryTab(QWidget):
     def _on_mode_changed(self, *args) -> None:   # toggled 信号带 bool 参数，此处忽略
         spec = self._spec()
         self._lbl_dim.setText(f"{spec.dim_label}：")
-        self._spin_dim.setValue(spec.dim_default)
+        # 仅当当前值是上一模式的默认值时切换到新模式默认值，
+        # 保留用户手动输入的数值不被模式切换重置
+        if not hasattr(self, "_last_dim_default"):
+            self._last_dim_default = spec.dim_default
+        if abs(self._spin_dim.value() - self._last_dim_default) < 1e-9:
+            self._spin_dim.setValue(spec.dim_default)
+        self._last_dim_default = spec.dim_default
         self._update_table_headers()
         self._update_preview()
 
@@ -290,6 +296,7 @@ class EntryTab(QWidget):
         self._counter += 1
         self._append_table_row(sample, density)
         self.data_changed.emit()
+        self._spin_force.setFocus()    # 焦点回到强力输入，便于连续录入
 
     def _import_file(self) -> None:
         result = ImportWizardDialog.run(self._conn, self)
