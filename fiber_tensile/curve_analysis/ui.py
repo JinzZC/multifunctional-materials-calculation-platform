@@ -24,6 +24,7 @@ from ..fileio.importer import ImportFileError
 from ..ui import prefs
 from ..ui.csv_export import save_csv_dialog
 from ..ui.richtext import to_rich
+from ..ui.widgets import DateEditWithToday
 from .core import analyze_curve
 from .exporters import export_excel_report, export_pdf_report
 from .importer import parse_curve_file
@@ -85,9 +86,7 @@ class CurveAnalysisTab(QWidget):
         self._combo_disp_unit = QComboBox()
         self._combo_disp_unit.addItems(["mm", "μm"])
         self._edit_remark = QLineEdit()
-        self._date_test = QDateEdit(QDate.currentDate())
-        self._date_test.setCalendarPopup(True)
-        self._date_test.setDisplayFormat("yyyy-MM-dd")
+        self._date_test = DateEditWithToday()
         form.addRow("样品名称：", self._edit_sample_name)
         form.addRow("直径(μm)：", self._spin_diameter)
         form.addRow("标距(mm)：", self._spin_gauge)

@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
 from ..config import sanitize_filename
 from ..ui import prefs
 from ..ui.richtext import HtmlHeaderView, equation_line_html, to_rich
+from ..ui.widgets import DateEditWithToday
 from .core import compute_rom, compute_vf_acid, compute_vf_density
 from .exporters import export_excel_report, export_pdf_report
 from .repository import (
@@ -133,9 +134,7 @@ class CompositesTab(QWidget):
         self._edit_sample_name = QLineEdit()
         self._edit_sample_name.setPlaceholderText("必填，如：T300/环氧-0.6")
         self._edit_remark = QLineEdit()
-        self._date_test = QDateEdit(QDate.currentDate())
-        self._date_test.setCalendarPopup(True)
-        self._date_test.setDisplayFormat("yyyy-MM-dd")
+        self._date_test = DateEditWithToday()
         form.addRow("样品名称：", self._edit_sample_name)
         form.addRow("纤维模量 E_f(GPa)：", self._rom_ef)
         form.addRow("树脂模量 E_m(GPa)：", self._rom_em)
@@ -213,9 +212,7 @@ class CompositesTab(QWidget):
         self._vf_rhom = _spin(0.1, 10, 1.20)
         self._vf_wf = _spin(0.0101, 0.9899, 0.65, 4)
         self._vf_remark = QLineEdit()
-        self._vf_date = QDateEdit(QDate.currentDate())
-        self._vf_date.setCalendarPopup(True)
-        self._vf_date.setDisplayFormat("yyyy-MM-dd")
+        self._vf_date = DateEditWithToday()
         form.addRow("样品名称：", self._vf_sample)
         self._lbl_rhoc = QLabel("复合材料密度 ρ_c(g/cm³)：")
         form.addRow(self._lbl_rhoc, self._vf_rhoc)

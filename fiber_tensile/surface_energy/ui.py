@@ -29,6 +29,7 @@ from ..config import sanitize_filename
 from ..fileio.importer import ImportFileError, parse_decimal_text
 from ..ui import prefs
 from ..ui.csv_export import save_csv_dialog
+from ..ui.widgets import DateEditWithToday
 from .core import METHOD_LABELS, METHODS, get_method_spec, LiquidPoint
 from .exporters import export_excel_report, export_pdf_report
 from .importer import parse_measurement_file
@@ -109,9 +110,7 @@ class SurfaceEnergyTab(QWidget):
         self._edit_sample_name = QLineEdit()
         self._edit_sample_name.setPlaceholderText("必填，如：PTFE 薄膜")
         self._edit_remark = QLineEdit()
-        self._date_test = QDateEdit(QDate.currentDate())
-        self._date_test.setCalendarPopup(True)
-        self._date_test.setDisplayFormat("yyyy-MM-dd")
+        self._date_test = DateEditWithToday()
         form.addRow("样品名称：", self._edit_sample_name)
         form.addRow("备注：", self._edit_remark)
         form.addRow("测试日期：", self._date_test)

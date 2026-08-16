@@ -50,6 +50,14 @@ def main() -> int:
     win.show()
 
     tab = win.entry_tab
+    # 0. 测试日期「今天」按钮：一键定位到今天
+    from PySide6.QtCore import QDate
+    from fiber_tensile.ui.widgets import DateEditWithToday
+    assert isinstance(win.entry_tab._date_test, DateEditWithToday)
+    win.entry_tab._date_test.setDate(QDate(2000, 1, 1))
+    win.entry_tab._date_test.btn_today.click()
+    assert win.entry_tab._date_test.date() == QDate.currentDate()
+
     # 1. 锚点：10 cN / 7 μm → 2598.45 MPa（期望值由公式层计算，避免硬编码四舍五入偏差）
     from fiber_tensile.core.formulas import filament_strength_mpa
     expected = f"{filament_strength_mpa(10.0, 7.0):,.2f}"

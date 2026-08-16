@@ -25,6 +25,7 @@ from ..data.repository import add_samples, create_batch
 from ..fileio.template import generate_template
 from . import prefs
 from .dialogs import ImportWizardDialog
+from .widgets import DateEditWithToday
 
 logger = logging.getLogger(__name__)
 
@@ -99,9 +100,7 @@ class EntryTab(QWidget):
         self._spin_dim = QDoubleSpinBox()
         self._spin_dim.setRange(0.0001, 1e6)
         self._spin_dim.setDecimals(4)
-        self._date_test = QDateEdit(QDate.currentDate())
-        self._date_test.setCalendarPopup(True)
-        self._date_test.setDisplayFormat("yyyy-MM-dd")
+        self._date_test = DateEditWithToday()
         form2.addRow("断裂强力：", force_row)
         form2.addRow(self._lbl_dim, self._spin_dim)
         form2.addRow("测试日期：", self._date_test)
