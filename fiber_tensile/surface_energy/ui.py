@@ -119,7 +119,7 @@ class SurfaceEnergyTab(QWidget):
         self._scroll_equations.setStyleSheet(
             "QScrollArea { border: 1px solid #DDEBF7; border-radius: 4px;"
             "background: #FBFDFF; }")
-        self._scroll_equations.setMinimumHeight(190)
+        self._scroll_equations.setMinimumHeight(140)
         eq_lay.addWidget(self._scroll_equations)
         top_row.addWidget(eq_box, 3)
         root.addLayout(top_row)
@@ -165,7 +165,7 @@ class SurfaceEnergyTab(QWidget):
         angle_header.setFont(font)
         self._table.setColumnWidth(COL_NAME, 140)
         self._table.setColumnWidth(COL_ANGLE, 110)
-        self._table.setMinimumHeight(120)
+        self._table.setMinimumHeight(100)
 
         # ---- ③④⑤ 三个区块用可拖拽分隔条连接 ----
         splitter = QSplitter(Qt.Vertical)
@@ -265,9 +265,9 @@ class SurfaceEnergyTab(QWidget):
         hw_layout.addLayout(h_buttons)
         splitter.addWidget(hist_widget)
 
-        splitter.setSizes([170, 300, 170])
+        splitter.setSizes([140, 280, 150])
         splitter.setStretchFactor(0, 2)
-        splitter.setStretchFactor(1, 3)
+        splitter.setStretchFactor(1, 4)
         splitter.setStretchFactor(2, 2)
         root.addWidget(splitter, 1)
 
@@ -436,7 +436,7 @@ class SurfaceEnergyTab(QWidget):
         from ..ui.weibull_plot import ChineseNavigationToolbar, MplCanvas, localize_toolbar
 
         self._canvas = MplCanvas()
-        self._canvas.setMinimumSize(300, 200)   # 窗格内自适应，避免溢出裁剪
+        self._canvas.setMinimumSize(240, 160)   # 窗格内自适应，避免溢出裁剪
         self._toolbar = ChineseNavigationToolbar(self._canvas, self)
         localize_toolbar(self._toolbar)
         layout = self._figure_container.layout()

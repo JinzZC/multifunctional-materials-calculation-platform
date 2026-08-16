@@ -20,7 +20,7 @@ def build_zisman_figure(points, gamma_c: float, r2: float,
                         title: str = "Zisman 图") -> Figure:
     """points: LiquidPoint 列表；fig 传入时清空重绘（嵌入 Qt 画布用）。"""
     if fig is None:
-        fig, ax = plt.subplots(figsize=(7.0, 5.0))
+        fig, ax = plt.subplots(figsize=(6.0, 4.3))
     else:
         fig.clf()
         ax = fig.add_subplot(111)
@@ -37,13 +37,14 @@ def build_zisman_figure(points, gamma_c: float, r2: float,
     ax.set_ylabel(r"$\cos\theta$")
     ax.set_title(title)
     ax.grid(True, linestyle="--", alpha=0.5)
-    ax.legend(fontsize=9)
+    # 图例放左上（数据点集中在左下到右上，左上为空区，避免与标注重叠）
+    ax.legend(fontsize=9, loc="upper left")
 
     sign, abs_b = ("+", intercept) if intercept >= 0 else ("-", abs(intercept))
     note = (f"拟合方程：$\\cos\\theta = {slope:.4f}\\,\\gamma_L {sign} {abs_b:.4f}$\n"
             f"临界表面张力 $\\gamma_c$ = {gamma_c:.2f} mN/m\n"
             f"拟合优度 R² = {r2:.4f}")
-    ax.text(0.97, 0.03, note, transform=ax.transAxes, fontsize=9.5,
+    ax.text(0.97, 0.03, note, transform=ax.transAxes, fontsize=9,
             ha="right", va="bottom",
             bbox=dict(boxstyle="round,pad=0.45", facecolor="white",
                       edgecolor="#9AA5B1", alpha=0.92))
