@@ -63,7 +63,10 @@ def analyze_curve(disp_mm, force_n, diameter_um, gauge_mm,
     f_max = float(np.max(y))
     if f_max <= 0:
         raise ValueError("最大力必须为正数")
-    break_idx = int(np.argmax(y))
+    if float(np.min(y)) == f_max:
+        raise ValueError("力数据全部相等，无法分析（无有效线性区）")
+    # 取最后一个最大力点作为断裂点（峰值保持段按平台终点计，伸长率更准确）
+    break_idx = len(y) - 1 - int(np.argmax(y[::-1]))
     if break_idx == 0:
         raise ValueError("断裂点在曲线起点，数据异常")
 
@@ -99,8 +102,8 @@ def analyze_curve(disp_mm, force_n, diameter_um, gauge_mm,
         + ("（曲线起始存在只伸长不增力的平台段）" if x0 > 0
            else "（无正向平台段，位移₀=0）"),
         f"④ 弹性模量：E = k×标距/截面积 = {k * gauge:.4f} N ÷ {area:g} m²"
-        f" = {e_gpa:.2f} GPa",
-        f"⑤ 断裂强度：σ_b = F_max/截面积 = {f_max:.4f}÷{area * 1e6:.6f}"
+        f" = {e_pa:.4f} Pa（÷10⁹）→ {e_gpa:.2f} GPa",
+        f"⑤ 断裂强度：σ_b = F_max/截面积 = {f_max:.4f}÷{area * 1e6:g}"
         f" = {strength_mpa:.2f} MPa",
         f"⑥ 断裂伸长率（校正后）：ε_b = (断裂位移 {x[break_idx]:.4f} − 位移₀ {x0:.4f})"
         f"÷标距 {gauge:g} = {elongation_pct:.3f}%",

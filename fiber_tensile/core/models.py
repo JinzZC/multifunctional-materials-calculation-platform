@@ -32,7 +32,6 @@ class Sample:
     density_gcm3: float | None = None   # 仅文件导入时携带（密度最终存批次级）
     id: int | None = None
     batch_id: int | None = None
-    sort_order: int = 0
     strength: float | None = None       # 缓存：单丝=MPa；纺织=cN/dtex
     strength_mpa: float | None = None   # 缓存：纺织有密度时的 MPa 换算值，否则 None
 

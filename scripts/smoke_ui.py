@@ -263,7 +263,8 @@ def main() -> int:
     cm._save_vf()
     assert cm._history.rowCount() == 2
     vf_text = cm._vf_lbl.text()
-    assert "纤维体积分数" in vf_text and "0.5587" in vf_text, vf_text
+    # 酸解法输出真实（含孔）体积分数：V_f = ρ_c×w_f/ρ_f = 1.5×0.65/1.76 ≈ 0.5540
+    assert "纤维体积分数" in vf_text and "0.5540" in vf_text, vf_text
     # 孔隙率以百分比明确显示
     assert "孔隙率" in vf_text and "%" in vf_text, vf_text
     assert "孔隙率" in cm._history.horizontalHeaderItem(9).text()

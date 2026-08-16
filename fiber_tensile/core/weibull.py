@@ -38,14 +38,16 @@ def weibull_fit(strengths) -> WeibullResult:
 
     sorted_strengths = sorted(values)
     n = len(sorted_strengths)
+    if sorted_strengths[0] == sorted_strengths[-1]:
+        raise ValueError("数据全部相等，无法进行 Weibull 拟合（无分散性）")
     f_hat = median_ranks(n)
     x = np.log(sorted_strengths)
     y = np.log(-np.log(1.0 - np.asarray(f_hat)))
 
     slope, intercept = np.polyfit(x, y, 1)   # y = slope·x + intercept
     if slope <= 0:
-        # 斜率为负在物理上无意义（强度越低失效概率越高才符合 Weibull）
-        raise ValueError("数据不符合 Weibull 分布（拟合斜率为负），请检查数据")
+        # 斜率为负或为零在物理上无意义（强度越低失效概率越高才符合 Weibull）
+        raise ValueError("数据不符合 Weibull 分布（拟合斜率 ≤ 0），请检查数据")
 
     m = float(slope)
     sigma0 = float(math.exp(-intercept / m))

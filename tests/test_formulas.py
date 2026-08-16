@@ -15,8 +15,8 @@ from fiber_tensile.core.models import MODE_FILAMENT, MODE_TEXTILE
 
 
 def test_filament_anchor():
-    # 锚点：F=10 cN、d=7 μm → 2598.5 MPa
-    assert filament_strength_mpa(10.0, 7.0) == pytest.approx(2598.5, rel=1e-3)
+    # 锚点：F=10 cN、d=7 μm → 2598.45 MPa
+    assert filament_strength_mpa(10.0, 7.0) == pytest.approx(2598.45, rel=1e-6)
 
 
 def test_filament_matches_direct_formula():
@@ -26,7 +26,7 @@ def test_filament_matches_direct_formula():
 
 
 def test_mpa_to_gpa():
-    assert mpa_to_gpa(filament_strength_mpa(10.0, 7.0)) == pytest.approx(2.5985, rel=1e-3)
+    assert mpa_to_gpa(filament_strength_mpa(10.0, 7.0)) == pytest.approx(2.59845, rel=1e-6)
 
 
 def test_textile_anchor():

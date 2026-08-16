@@ -81,3 +81,27 @@ def test_negative_force_rejected():
     with pytest.raises(ValueError, match="不能为负"):
         analyze_curve(np.linspace(0, 1, 6), np.array([0, 0.1, 0.2, -0.1, 0.4, 0.5]),
                       DIAMETER_UM, GAUGE_MM)
+
+
+def test_all_equal_force_message():
+    with pytest.raises(ValueError, match="全部相等"):
+        analyze_curve(np.linspace(0, 1, 6), np.ones(6), DIAMETER_UM, GAUGE_MM)
+
+
+def test_plateau_break_takes_last_max():
+    """峰值保持平台：断裂点取平台终点，伸长率按平台终点计。"""
+    toe = 0.5
+    k = 230e9 * _area() / (GAUGE_MM / 1000.0) / 1000.0
+    x_rise = toe + 0.01 * GAUGE_MM          # 上升段结束（真实应变 1%）
+    f_peak = k * (x_rise - toe)
+    # 上升段 + 峰值保持平台（3 个点力相同）→ 平台终点应变 1.5%
+    x = np.concatenate([
+        np.linspace(0.0, x_rise, 100),
+        np.linspace(x_rise, x_rise + 0.005 * GAUGE_MM, 3),
+    ])
+    f = np.concatenate([np.where(np.linspace(0, x_rise, 100) <= toe, 0.0,
+                                 k * (np.linspace(0, x_rise, 100) - toe)),
+                        np.full(3, f_peak)])
+    r = analyze_curve(x, f, DIAMETER_UM, GAUGE_MM)
+    assert r.elongation_pct == pytest.approx(1.5, rel=1e-3)
+    assert r.strength_mpa == pytest.approx(f_peak / _area() / 1e6, rel=1e-3)

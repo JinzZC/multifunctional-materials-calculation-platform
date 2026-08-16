@@ -9,7 +9,7 @@
     若已知纤维密度 ρ(g/cm³)，可换算 MPa：σ[MPa] = 强度[cN/dtex] × ρ × 100。
 
 数值锚点：
-    F=10 cN、d=7 μm → 2598.5 MPa ≈ 2.599 GPa
+    F=10 cN、d=7 μm → 2598.45 MPa ≈ 2.598 GPa
     5 cN/dtex、ρ=1.14 g/cm³ → 570 MPa
 """
 

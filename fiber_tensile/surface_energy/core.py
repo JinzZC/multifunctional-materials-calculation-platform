@@ -192,12 +192,29 @@ def compute_wu(points: list) -> SurfaceEnergyResult:
     for p in points:
         if p.gamma_d is None or p.gamma_p is None:
             raise ValueError(f"Wu 法需要液体的 γ^d 与 γ^p 分量（液体「{p.liquid_name}」缺失）")
-    seed = compute_owrk(points)   # OWRK 解作迭代初值
+    try:
+        seed = compute_owrk(points)   # OWRK 解作迭代初值
+        seed_vals = (seed.gamma_d, seed.gamma_p)
+        seed_line = (f"① 以 OWRK 解为迭代初值：γ_S^d = {seed.gamma_d:.4f}，"
+                     f"γ_S^p = {seed.gamma_p:.4f}")
+    except ValueError:
+        # OWRK 无正解时调和方程组仍可能有正解：用 γ^p=0 液体的单方程
+        # 闭式解 4gd·γd/(gd+γd)=c → gd = c·γd/(4γd−c) 作 γ_S^d 初值
+        seed = None
+        gd_guess = 1.0
+        for p in points:
+            if p.gamma_p == 0.0:
+                c_i = p.gamma_total * (1.0 + math.cos(math.radians(p.angle_deg)))
+                if c_i < 4.0 * p.gamma_d:
+                    gd_guess = max(c_i * p.gamma_d / (4.0 * p.gamma_d - c_i), 0.01)
+                break
+        seed_vals = (gd_guess, 1.0)
+        seed_line = (f"① OWRK 无正解，改用启发式初值：γ_S^d = {gd_guess:.4f}，"
+                     "γ_S^p = 1.0")
     steps = [f"计算过程（Wu 调和平均法，{len(points)} 种液体）",
              "调和平均方程组（每液体一个方程）：γ_L×(1+cosθ) "
              "= 4×⟨γ_S^d×γ_L^d|γ_S^d+γ_L^d⟩ + 4×⟨γ_S^p×γ_L^p|γ_S^p+γ_L^p⟩",
-             f"① 以 OWRK 解为迭代初值：γ_S^d = {seed.gamma_d:.4f}，"
-             f"γ_S^p = {seed.gamma_p:.4f}"]
+             seed_line]
 
     def term(v, lv):
         # 任一分量为 0 时该项为 0（避免 0/0）
@@ -207,9 +224,9 @@ def compute_wu(points: list) -> SurfaceEnergyResult:
         return [p.gamma_total * (1.0 + math.cos(math.radians(p.angle_deg)))
                 - term(gd, p.gamma_d) - term(gp, p.gamma_p) for p in points]
 
-    def solve_1d(fn, name):
+    def solve_1d(fn, name, start=1.0):
         # 单变量 Gauss-Newton：最小化残差平方和
-        v = 1.0
+        v = start
         iters = 0
         for iters in range(1, _MAX_ITER + 1):
             f = np.asarray(fn(v), dtype=float)
@@ -231,15 +248,19 @@ def compute_wu(points: list) -> SurfaceEnergyResult:
     if not has_d and not has_p:
         raise ValueError("液体分量数据无效，无法用 Wu 法计算")
     if has_d and not has_p:
-        gd = solve_1d(lambda gd: np.array(target(gd, 0.0)), "γ_S^d")
+        gd = solve_1d(lambda gd: np.array(target(gd, 0.0)), "γ_S^d",
+                      start=seed_vals[0])
         gp = 0.0
     elif has_p and not has_d:
         gd = 0.0
-        gp = solve_1d(lambda gp: np.array(target(0.0, gp)), "γ_S^p")
+        gp = solve_1d(lambda gp: np.array(target(0.0, gp)), "γ_S^p",
+                      start=seed_vals[1])
     else:
-        # 2 维 Gauss-Newton（数值 Jacobian）
-        v = np.array([max(seed.gamma_d, 1e-6), max(seed.gamma_p, 1e-6)])
+        # 2 维 Gauss-Newton（数值 Jacobian + 步长阻尼防穿越负象限）
+        v = np.array([max(seed_vals[0], 1e-6), max(seed_vals[1], 1e-6)])
         iters = 0
+        converged = False
+        step_norm = float("nan")
         for iters in range(1, _MAX_ITER + 1):
             f = np.array(target(v[0], v[1]))
             jac = np.zeros((len(points), 2))
@@ -248,19 +269,34 @@ def compute_wu(points: list) -> SurfaceEnergyResult:
                 vh[j] += 1e-6
                 jac[:, j] = (np.array(target(vh[0], vh[1])) - f) / 1e-6
             step = np.linalg.lstsq(jac, -f, rcond=None)[0]
-            v = v + step
-            if np.linalg.norm(step) < _STEP_TOL:
-                break
-            if v[0] <= 0 or v[1] <= 0:
+            alpha = 1.0
+            v_new = v + step
+            for _ in range(12):
+                if v_new[0] > 0 and v_new[1] > 0:
+                    break
+                alpha *= 0.5
+                v_new = v + alpha * step
+            if not (v_new[0] > 0 and v_new[1] > 0):
                 raise ValueError("Wu 法迭代出现负值，所选液体组合不适用（可换用 OWRK 法）")
+            v = v_new
+            step_norm = float(np.linalg.norm(alpha * step))
+            if step_norm < _STEP_TOL:
+                converged = True
+                break
         gd, gp = float(v[0]), float(v[1])
-        steps.append(f"② 二维 Gauss-Newton 迭代 {iters} 次收敛（步长 < {_STEP_TOL:g}）")
+        if converged:
+            steps.append(f"② 二维 Gauss-Newton 迭代 {iters} 次收敛（步长 < {_STEP_TOL:g}）")
+        else:
+            steps.append(f"② 达到最大迭代次数 {_MAX_ITER} 次"
+                         f"（末次步长 {step_norm:.2e}，取当前最优解）")
 
     residual = np.abs(np.asarray(target(gd, gp)))
     c = np.array([p.gamma_total * (1.0 + math.cos(math.radians(p.angle_deg)))
                   for p in points])
     if np.max(residual) > 0.5 * np.max(np.abs(c)):
-        raise ValueError("Wu 法迭代未收敛，请检查数据或换用 OWRK 法")
+        raise ValueError(
+            f"拟合残差过大（最大 {np.max(residual):.3f} > 阈值 "
+            f"{0.5 * np.max(np.abs(c)):.3f}），数据一致性差，请检查数据或换用 OWRK 法")
     gamma_d, gamma_p = max(gd, 0.0), max(gp, 0.0)
     steps.append(f"③ 收敛解：γ_S^d = {gamma_d:.4f}，γ_S^p = {gamma_p:.4f}")
     steps.append(f"④ 最大残差 = {np.max(residual):.3e}"
@@ -324,7 +360,12 @@ def compute_zisman(points: list) -> SurfaceEnergyResult:
         steps.append("   斜率接近 0 → 无法外推")
         raise ValueError("拟合斜率接近 0，无法外推临界表面张力（请检查接触角数据）")
     gamma_c = (1.0 - intercept) / slope
-    steps.append(f"③ 临界表面张力：γ_c = ⟨1 − {intercept:.4f}|{slope:.4f}⟩ "
+    if gamma_c <= 0:
+        raise ValueError(
+            f"外推得到的临界表面张力为负（γ_c = {gamma_c:.2f} mN/m），"
+            "数据不合理，请检查接触角数据")
+    b_part = f"(−{abs(intercept):.4f})" if intercept < 0 else f"{intercept:.4f}"
+    steps.append(f"③ 临界表面张力：γ_c = ⟨1 − {b_part}|{slope:.4f}⟩ "
                  f"= {gamma_c:.2f} mN/m")
     r2 = float(np.corrcoef(x, y)[0, 1] ** 2)
     steps.append(f"④ 拟合优度 R² = {r2:.4f}")

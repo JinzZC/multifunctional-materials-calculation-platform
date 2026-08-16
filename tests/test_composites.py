@@ -48,13 +48,18 @@ def test_vf_density_validation():
 
 
 def test_vf_acid_anchor():
-    # wf=0.65, ρf=1.76, ρm=1.2, ρc=1.5
+    # wf=0.65, ρf=1.76, ρm=1.2, ρc=1.5：
+    # 真实 V_f = ρ_c×w_f/ρ_f、V_m = ρ_c×w_m/ρ_m、V_v = 1−V_f−V_m
     r = compute_vf_acid(0.65, 1.76, 1.2, 1.5)
-    term = 0.65 / 1.76 + 0.35 / 1.2
-    assert r.vf == pytest.approx((0.65 / 1.76) / term, rel=1e-9)
-    assert r.vv == pytest.approx(1.0 - 1.5 * term, rel=1e-6)
+    vf_true = 1.5 * 0.65 / 1.76
+    vm_true = 1.5 * 0.35 / 1.2
+    assert r.vf == pytest.approx(vf_true, rel=1e-9)
+    assert r.vm == pytest.approx(vm_true, rel=1e-9)
+    assert r.vv == pytest.approx(1 - vf_true - vm_true, rel=1e-9)
     assert r.vv > 0
-    assert r.vm == pytest.approx(1 - r.vf - r.vv)
+    assert r.vf + r.vm + r.vv == pytest.approx(1.0, rel=1e-9)
+    # 计算过程应包含无孔隙基准参照值
+    assert any("无孔隙基准" in s for s in r.steps)
     assert any("孔隙率" in s for s in r.steps)
 
 

@@ -170,6 +170,50 @@ def test_unknown_method_raises():
         compute_surface_energy("foobar", [WATER, DIIODOMETHANE])
 
 
+def test_wu_owrk_negative_seed_fallback():
+    """OWRK 出现负根时，Wu 法不应被初值阻断——调和方程组可能有正解。"""
+    w = LiquidPoint("水", 72.8, 100.13, gamma_d=21.8, gamma_p=51.0)
+    d = LiquidPoint("二碘甲烷", 50.8, 30.0, gamma_d=50.8, gamma_p=0.0)
+    with pytest.raises(ValueError, match="负的平方根"):
+        compute_owrk([w, d])          # OWRK 确实无正解
+    r = compute_wu([w, d])            # 但 Wu 应有正解
+    assert r.gamma_d > 0 and r.gamma_p > 0
+    assert r.gamma_d == pytest.approx(44.42, rel=1e-3)
+    assert r.gamma_p == pytest.approx(0.378, rel=1e-2)
+    assert any("启发式初值" in s for s in r.steps)
+
+
+def test_wu_max_iter_message_honest():
+    """迭代未达容差时，steps 不得谎称「收敛」。"""
+    w = LiquidPoint("水", 72.8, 80.0, gamma_d=21.8, gamma_p=51.0)
+    d = LiquidPoint("二碘甲烷", 50.8, 45.0, gamma_d=50.8, gamma_p=0.0)
+    eg = LiquidPoint("乙二醇", 48.0, 55.0, gamma_d=29.0, gamma_p=19.0)
+    r = compute_wu([w, d, eg])
+    if any("最大迭代次数" in s for s in r.steps):
+        assert not any("次收敛" in s for s in r.steps)
+    else:
+        assert any("次收敛" in s for s in r.steps)
+
+
+def test_zisman_negative_gamma_c_raises():
+    pts = [LiquidPoint("A", 50.8, math.degrees(math.acos(0.5))),
+           LiquidPoint("B", 48.0, math.degrees(math.acos(0.6))),
+           LiquidPoint("C", 27.5, math.degrees(math.acos(0.7)))]
+    with pytest.raises(ValueError, match="为负"):
+        compute_surface_energy(METHOD_ZISMAN, pts)
+
+
+def test_zisman_negative_intercept_display():
+    """截距为负时 steps 不得出现「1 − -x」双重负号。"""
+    pts = [LiquidPoint(f"L{g:g}", g, math.degrees(math.acos(0.01 * g - 0.5)))
+           for g in (10.0, 50.0, 90.0)]
+    r = compute_surface_energy(METHOD_ZISMAN, pts)
+    assert r.gamma_c > 0
+    step3 = next(s for s in r.steps if s.startswith("③"))
+    assert "1 − −" not in step3
+    assert "(−0.5" in step3
+
+
 def test_method_equations_present():
     for key, spec in METHODS.items():
         assert spec.equations.strip(), f"{key} 缺少公式展示文本"

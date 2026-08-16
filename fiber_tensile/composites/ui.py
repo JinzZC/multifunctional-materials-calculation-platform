@@ -125,11 +125,11 @@ class CompositesTab(QWidget):
         self._rom_em = _spin(0.1, 100, 3.5)
         self._rom_gf = _spin(1, 1000, 20.0)
         self._rom_gm = _spin(0.05, 50, 1.3)
-        self._rom_nuf = _spin(0.01, 0.49, 0.20, 4)
-        self._rom_num = _spin(0.01, 0.49, 0.35, 4)
+        self._rom_nuf = _spin(0.0101, 0.4899, 0.20, 4)
+        self._rom_num = _spin(0.0101, 0.4899, 0.35, 4)
         self._rom_rhof = _spin(0.1, 10, 1.76)
         self._rom_rhom = _spin(0.1, 10, 1.20)
-        self._rom_vf = _spin(0.01, 0.99, 0.60, 4)
+        self._rom_vf = _spin(0.0101, 0.9899, 0.60, 4)
         self._edit_sample_name = QLineEdit()
         self._edit_sample_name.setPlaceholderText("必填，如：T300/环氧-0.6")
         self._edit_remark = QLineEdit()
@@ -208,10 +208,10 @@ class CompositesTab(QWidget):
         form.addRow("计算方法：", method_row)
         self._vf_sample = QLineEdit()
         self._vf_sample.setPlaceholderText("必填，如：CFRP-板1#")
-        self._vf_rhoc = _spin(0.1, 10, 1.55)
+        self._vf_rhoc = _spin(0.1, 10, 1.45)      # 与默认 w_f/ρ 组合给出正孔隙率
         self._vf_rhof = _spin(0.1, 10, 1.76)
         self._vf_rhom = _spin(0.1, 10, 1.20)
-        self._vf_wf = _spin(0.01, 0.99, 0.65, 4)
+        self._vf_wf = _spin(0.0101, 0.9899, 0.65, 4)
         self._vf_remark = QLineEdit()
         self._vf_date = QDateEdit(QDate.currentDate())
         self._vf_date.setCalendarPopup(True)
@@ -458,7 +458,7 @@ class CompositesTab(QWidget):
                                             i["ρ_m(g/cm³)"])
             pairs = [("纤维体积分数 V_f", f"{result.vf:.4f}"),
                      ("基体体积分数 V_m", f"{result.vm:.4f}"),
-                     ("孔隙率 V_v", f"{result.vv * 100:.3f}%"
+                     ("孔隙率 V_v", f"{result.vv * 100:.2f}%"
                       if result.vv is not None else "—")]
         start = prefs.last_dir()
         safe_name = sanitize_filename(row["sample_name"])

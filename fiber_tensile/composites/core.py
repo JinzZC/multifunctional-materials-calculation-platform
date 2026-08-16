@@ -66,16 +66,16 @@ def compute_rom(ef_gpa, em_gpa, gf_gpa, gm_gpa, nuf, num, rhof, rhom, vf) -> ROM
 
     steps = [
         "计算过程（混合法则，Rule of Mixtures）",
-        f"① 基体体积分数：V_m = 1 − V_f = 1 − {vf:g} = {vm:.4f}",
+        f"① 基体体积分数：V_m = 1 − V_f = 1 − {vf:g} = {vm:.6g}",
         f"② 纵向模量：E₁ = E_f×V_f + E_m×V_m"
-        f" = {ef:g}×{vf:g} + {em:g}×{vm:.4f} = {e1:.2f} GPa",
+        f" = {ef:g}×{vf:g} + {em:g}×{vm:.6g} = {e1:.2f} GPa",
         f"③ 横向模量（反混合法则）：E₂ = E_f×E_m/(V_f×E_m + V_m×E_f)"
-        f" = {ef:g}×{em:g}÷({vf:g}×{em:g} + {vm:.4f}×{ef:g}) = {e2:.2f} GPa",
+        f" = {ef:g}×{em:g}÷({vf:g}×{em:g} + {vm:.6g}×{ef:g}) = {e2:.2f} GPa",
         f"④ 剪切模量：G₁₂ = G_f×G_m/(V_f×G_m + V_m×G_f) = {g12:.2f} GPa",
         f"⑤ 主泊松比：ν₁₂ = ν_f×V_f + ν_m×V_m"
-        f" = {nuf:g}×{vf:g} + {num:g}×{vm:.4f} = {nu12:.4f}",
+        f" = {nuf:g}×{vf:g} + {num:g}×{vm:.6g} = {nu12:.4f}",
         f"⑥ 密度：ρ_c = ρ_f×V_f + ρ_m×V_m"
-        f" = {rhof:g}×{vf:g} + {rhom:g}×{vm:.4f} = {rho:.3f} g/cm³",
+        f" = {rhof:g}×{vf:g} + {rhom:g}×{vm:.6g} = {rho:.3f} g/cm³",
     ]
     return ROMResult(e1_gpa=e1, e2_gpa=e2, g12_gpa=g12, nu12=nu12,
                      rho_gcm3=rho, vf=vf, vm=vm, steps=steps)
@@ -99,25 +99,34 @@ def compute_vf_density(rhoc, rhof, rhom) -> VFResult:
 
 
 def compute_vf_acid(wf, rhof, rhom, rhoc) -> VFResult:
-    """纤维体积分数与孔隙率（酸解法/灼烧法）。wf 为纤维质量分数（0~1）。"""
+    """纤维体积分数与孔隙率（酸解法/灼烧法，ASTM D3171 思路）。
+
+    真实（含孔）体积分数：V_f = ρ_c×w_f/ρ_f，V_m = ρ_c×w_m/ρ_m；
+    孔隙率 V_v = 1 − V_f − V_m = 1 − ρ_c×(w_f/ρ_f + w_m/ρ_m)。
+    无孔隙基准 V_f′ = (w_f/ρ_f)/(w_f/ρ_f + w_m/ρ_m) 在过程中展示作参照。
+    """
     wf = _check(wf, "纤维质量分数 w_f", 0.01, 0.99)
     wm = 1.0 - wf
     rf = _check(rhof, "纤维密度 ρ_f", 0.1, 10)
     rm = _check(rhom, "树脂密度 ρ_m", 0.1, 10)
     rc = _check(rhoc, "复合材料密度 ρ_c", 0.1, 10)
     term = wf / rf + wm / rm
-    vf = (wf / rf) / term
-    vv = 1.0 - rc * term
+    vf_void_free = (wf / rf) / term
+    vf = rc * wf / rf
+    vm = rc * wm / rm
+    vv = 1.0 - vf - vm
     if vv < -1e-6:
         raise ValueError("计算得到的孔隙率为负值，请检查密度与质量分数数据")
     vv = max(vv, 0.0)
     steps = [
         "计算过程（纤维体积分数与孔隙率，酸解法）",
         f"① 树脂质量分数：w_m = 1 − w_f = {wm:.4f}",
-        f"② 无孔隙假设下的体积分数：V_f = (w_f/ρ_f)/(w_f/ρ_f + w_m/ρ_m)"
-        f" = ({wf:g}÷{rf:g})÷({wf:g}÷{rf:g} + {wm:.4f}÷{rm:g}) = {vf:.4f}",
-        f"③ 孔隙率：V_v = 1 − ρ_c×(w_f/ρ_f + w_m/ρ_m)"
-        f" = 1 − {rc:g}×({term:.6f}) = {vv:.4f}",
-        f"④ 校正后基体体积分数：V_m = 1 − V_f − V_v = {1 - vf - vv:.4f}",
+        f"② 无孔隙基准纤维体积分数（参照值）：V_f′ = (w_f/ρ_f)/(w_f/ρ_f + w_m/ρ_m)"
+        f" = ({wf:g}÷{rf:g})÷({wf:g}÷{rf:g} + {wm:.4f}÷{rm:g}) = {vf_void_free:.4f}",
+        f"③ 真实（含孔）纤维体积分数：V_f = ρ_c×w_f/ρ_f"
+        f" = {rc:g}×{wf:g}÷{rf:g} = {vf:.4f}",
+        f"④ 真实基体体积分数：V_m = ρ_c×w_m/ρ_m"
+        f" = {rc:g}×{wm:.4f}÷{rm:g} = {vm:.4f}",
+        f"⑤ 孔隙率：V_v = 1 − V_f − V_m = 1 − {vf:.4f} − {vm:.4f} = {vv:.4f}",
     ]
-    return VFResult(vf=vf, vm=1 - vf - vv, vv=vv, steps=steps)
+    return VFResult(vf=vf, vm=vm, vv=vv, steps=steps)

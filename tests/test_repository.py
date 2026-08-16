@@ -15,8 +15,8 @@ from fiber_tensile.data.repository import (
     update_batch,
 )
 
-# 锚点：F=10 cN、d=7 μm → 2598.5 MPa；5 cN/dtex、ρ=1.14 → 570 MPa
-ANCHOR_MPA = 2598.5
+# 锚点：F=10 cN、d=7 μm → 2598.45 MPa；5 cN/dtex、ρ=1.14 → 570 MPa
+ANCHOR_MPA = 2598.45
 
 
 @pytest.fixture
