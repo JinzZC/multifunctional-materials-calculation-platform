@@ -12,10 +12,10 @@ from PySide6.QtWidgets import (
 )
 
 from ..config import sanitize_filename
-from ..core.models import MODE_LABELS, Batch
+from ..core.models import MODE_FILAMENT, MODE_LABELS, Batch
 from ..core.modes import get_mode_spec, strength_unit_label
 from ..core.statistics import batch_statistics
-from ..core.weibull import weibull_fit
+from ..core.weibull import weibull_fit, weibull_fit_3p, weibull_fit_mle
 from ..data.repository import get_batch, get_strengths, list_batches
 from . import prefs
 
@@ -107,6 +107,15 @@ class AnalysisTab(QWidget):
 
         weibull_group = QGroupBox("Weibull 分布分析")
         w_layout = QVBoxLayout(weibull_group)
+        wfit_row = QHBoxLayout()
+        wfit_row.addWidget(QLabel("拟合方法："))
+        self._combo_wfit = QComboBox()
+        self._combo_wfit.addItem("最小二乘法（GB/T 31290 标准）", "lsq")
+        self._combo_wfit.addItem("极大似然法（MLE，参数最优）", "mle")
+        self._combo_wfit.addItem("三参数威布尔（MLE）", "mle3p")
+        self._combo_wfit.currentIndexChanged.connect(self._on_wfit_changed)
+        wfit_row.addWidget(self._combo_wfit, 1)
+        w_layout.addLayout(wfit_row)
         self._lbl_m = QLabel("Weibull 模数 m：—")
         self._lbl_sigma0 = QLabel("特征强度 σ₀：—")
         self._lbl_r2 = QLabel("拟合优度 R²：—")
@@ -219,8 +228,25 @@ class AnalysisTab(QWidget):
             self._stats_table.setItem(r, 0, QTableWidgetItem(k))
             self._stats_table.setItem(r, 1, QTableWidgetItem(v))
 
+        self._update_weibull(mode, density, name, strengths, unit)
+
+    def _update_weibull(self, mode: str, density, name: str,
+                        strengths: list, unit: str) -> None:
+        """按所选拟合方法（最小二乘/MLE/三参数）计算并展示 Weibull 结果。
+
+        单丝模式按 GPa 单位拟合（横轴为 ln(σ_GPa)），纺织保持 cN/dtex。
+        """
+        if mode == MODE_FILAMENT:
+            strengths = [s / 1000.0 for s in strengths]   # MPa → GPa
+            unit = "GPa"
+        method = self._combo_wfit.currentData()
         try:
-            w = weibull_fit(strengths)
+            if method == "mle":
+                w = weibull_fit_mle(strengths)
+            elif method == "mle3p":
+                w = weibull_fit_3p(strengths)
+            else:
+                w = weibull_fit(strengths)
         except ValueError as e:
             self._lbl_m.setText("Weibull 模数 m：—")
             self._lbl_sigma0.setText("特征强度 σ₀：—")
@@ -234,12 +260,28 @@ class AnalysisTab(QWidget):
         self._ensure_canvas()
         self._weibull_error = None
         self._lbl_m.setText(f"Weibull 模数 m = {w.m:.4f}")
-        sigma0_text = f"特征强度 σ₀ = {w.sigma0:.2f} {unit}"
-        if get_mode_spec(mode).uses_density and density is not None:
-            sigma0_text += f"（≈ {w.sigma0 * density * 100:.2f} MPa）"
+        if mode == MODE_FILAMENT:
+            sigma0_text = f"特征强度 σ₀ = {w.sigma0:.4f} GPa"
+            if w.gamma > 0:
+                sigma0_text += f"　位置参数 γ = {w.gamma:.4f} GPa"
+        else:
+            sigma0_text = f"特征强度 σ₀ = {w.sigma0:.2f} {unit}"
+            if w.gamma > 0:
+                sigma0_text += f"　位置参数 γ = {w.gamma:.2f}"
+            elif get_mode_spec(mode).uses_density and density is not None:
+                sigma0_text += f"（≈ {w.sigma0 * density * 100:.2f} MPa）"
         self._lbl_sigma0.setText(sigma0_text)
         self._lbl_r2.setText(f"拟合优度 R² = {w.r2:.4f}")
         self._canvas.draw_weibull([w], labels=[name], sigma0_unit=unit)
+
+    def _on_wfit_changed(self, *args) -> None:
+        """切换拟合方法后重算（仅重算 Weibull 部分）。"""
+        payload = self._current_payload()
+        if payload is None:
+            return
+        mode, density, name, _, strengths = payload
+        unit = strength_unit_label(mode)
+        self._update_weibull(mode, density, name, strengths, unit)
 
     def _export(self, kind: str) -> None:
         payload = self._current_payload()

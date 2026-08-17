@@ -53,7 +53,12 @@ def build_weibull_figure(series, labels=None, title="Weibull 分布拟合图",
         # 拟合直线：y = m·x − m·ln(σ₀)
         xline = np.linspace(x.min(), x.max(), 50)
         ax.plot(xline, w.m * xline - w.m * math.log(w.sigma0), linewidth=1.5, zorder=2)
-    ax.set_xlabel(r"$\ln\sigma$")
+    # 3 参数 Weibull（含位置参数 γ）时横轴为 ln(σ−γ)；单位注明（如 GPa）
+    has_gamma = any(w.gamma > 0 for w in series)
+    base = r"$\ln(\sigma-\gamma)$" if has_gamma else r"$\ln\sigma$"
+    if sigma0_unit:
+        base += f"（σ 单位：{sigma0_unit}）"
+    ax.set_xlabel(base)
     ax.set_ylabel(r"$\ln(-\ln(1-\hat{F}))$")
     ax.set_title(title)
     ax.grid(True, linestyle="--", alpha=0.5)

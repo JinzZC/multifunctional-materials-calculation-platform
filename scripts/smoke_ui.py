@@ -100,6 +100,15 @@ def main() -> int:
     assert ana._stats_table.item(0, 1).text() == "5"      # N=5
     assert ana._lbl_m.text().startswith("Weibull 模数 m = "), ana._lbl_m.text()
     assert ana._lbl_sigma0.text().startswith("特征强度 σ₀ = "), ana._lbl_sigma0.text()
+    assert "GPa" in ana._lbl_sigma0.text(), ana._lbl_sigma0.text()   # 单丝按 GPa 展示
+    # 横轴标签含 GPa 单位说明
+    assert "GPa" in ana._canvas.fig.axes[0].get_xlabel()
+    # 拟合方法切换：MLE / 三参数 也能出结果
+    ana._combo_wfit.setCurrentIndex(1)          # 极大似然法
+    assert ana._lbl_m.text().startswith("Weibull 模数 m = "), ana._lbl_m.text()
+    ana._combo_wfit.setCurrentIndex(2)          # 三参数威布尔
+    assert ana._lbl_m.text().startswith("Weibull 模数 m = "), ana._lbl_m.text()
+    ana._combo_wfit.setCurrentIndex(0)          # 恢复标准法
     # Weibull 图上应包含拟合直线方程标注
     canvas_texts = [t.get_text() for ax in ana._canvas.fig.axes for t in ax.texts]
     assert any("拟合直线方程" in t and "y = " in t for t in canvas_texts), canvas_texts
@@ -145,6 +154,7 @@ def main() -> int:
     assert prefs.last_dir() == tempfile.gettempdir()
 
     # 7. 表面能模块：OWRK 计算保存 + 报告导出
+    win._nav.setCurrentRow(1)          # 确保表面能页面为当前页（可见性断言依赖此）
     st = win.surface_tab
     st._radio_methods["owrk"].setChecked(True)
     assert st._btn_add_row.text() == "添加液体"

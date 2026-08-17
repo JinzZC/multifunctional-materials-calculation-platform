@@ -229,16 +229,21 @@ class HistoryTab(QWidget):
         for b in selected:
             batch = get_batch(self._conn, b.id)
             strengths = get_strengths(self._conn, b.id)
+            # 单丝模式按 GPa 拟合（与分析页横轴一致）
+            fit_strengths = ([s / 1000.0 for s in strengths]
+                             if batch.mode == MODE_FILAMENT else strengths)
             try:
                 stats = batch_statistics(strengths)
-                weibull = weibull_fit(strengths)
+                weibull = weibull_fit(fit_strengths)
             except ValueError:
                 continue
             payload.append((batch, stats, weibull))
         if len(payload) < 2:
             QMessageBox.warning(self, "无法对比", "所选批次数据不足，无法对比。")
             return
-        CompareDialog(payload, self).exec()
+        sigma0_unit = ("GPa" if payload[0][0].mode == MODE_FILAMENT
+                       else strength_unit_label(payload[0][0].mode))
+        CompareDialog(payload, self, sigma0_unit=sigma0_unit).exec()
 
     def _delete_selected(self) -> None:
         selected = self._selected_batches()

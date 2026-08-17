@@ -65,10 +65,12 @@ class AnalysisResult:
 
 @dataclass
 class WeibullResult:
-    """2 参数 Weibull 拟合结果。
+    """Weibull 拟合结果（2 参数或 3 参数）。
 
     m：Weibull 模数（形状参数，无量纲）；
-    sigma0：特征强度（尺度参数，失效概率 63.2% 处），单位与输入强度一致。
+    sigma0：特征强度（尺度参数，失效概率 63.2% 处），单位与输入强度一致；
+    gamma：位置参数（3 参数 Weibull），2 参数时为 0；
+    x：ln(σ−γ)（3 参数）或 ln(σ)（2 参数）。
     """
 
     m: float
@@ -76,8 +78,10 @@ class WeibullResult:
     r2: float
     strengths_sorted: list
     median_ranks: list      # F̂ᵢ = (i-0.5)/N
-    x: list                 # ln(σ)
+    x: list                 # ln(σ−γ) 或 ln(σ)
     y: list                 # ln(-ln(1-F̂))
+    gamma: float = 0.0
+    steps: list = field(default_factory=list)   # 计算过程（MLE/3 参数用）
 
 
 @dataclass

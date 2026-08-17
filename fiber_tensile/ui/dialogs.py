@@ -193,7 +193,8 @@ class CompareDialog(QDialog):
     入参 payload：[(Batch, AnalysisResult, WeibullResult|None), ...]，模式必须一致。
     """
 
-    def __init__(self, payload: list, parent: QWidget | None = None):
+    def __init__(self, payload: list, parent: QWidget | None = None,
+                 sigma0_unit: str = ""):
         # 延迟导入 matplotlib：只在打开对比窗口时加载
         from .weibull_plot import ChineseNavigationToolbar, MplCanvas, localize_toolbar
 
@@ -203,6 +204,8 @@ class CompareDialog(QDialog):
         layout = QVBoxLayout(self)
 
         unit = strength_unit_label(payload[0][0].mode)
+        if not sigma0_unit:
+            sigma0_unit = unit
         headers = ["批次名称", "样本数 N", f"均值({unit})", f"标准差({unit})",
                    "变异系数 CV%", f"最小值({unit})", f"最大值({unit})"]
         table = QTableWidget(len(payload), len(headers))
@@ -228,7 +231,7 @@ class CompareDialog(QDialog):
         if series:
             canvas = MplCanvas()
             canvas.draw_weibull(series, labels=labels, title="Weibull 分布对比图",
-                                sigma0_unit=unit)
+                                sigma0_unit=sigma0_unit)
             toolbar = ChineseNavigationToolbar(canvas, self)
             localize_toolbar(toolbar)
             layout.addWidget(toolbar)
