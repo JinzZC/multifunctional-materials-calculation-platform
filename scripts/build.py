@@ -18,6 +18,13 @@ _COMMON = [
     "--hidden-import", "matplotlib.backends.backend_qtagg",
     "--exclude-module", "tkinter",
     "--exclude-module", "PySide6.QtWebEngineWidgets",
+    # pandas/numpy 的 PyInstaller hooks 会把测试与构建工具链一并收集；运行时不需要。
+    "--exclude-module", "pytest",
+    "--exclude-module", "_pytest",
+    "--exclude-module", "setuptools",
+    "--exclude-module", "pygments",
+    "--exclude-module", "pandas.tests",
+    "--exclude-module", "numpy.tests",
 ]
 
 

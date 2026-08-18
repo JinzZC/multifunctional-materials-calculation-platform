@@ -1,6 +1,6 @@
 # 多功能计算平台 — 项目指南（Claude 会话自动加载）
 
-面向材料测试的 Windows 桌面计算平台（Python 3.14 + PySide6 6.11，中文界面），v0.3.0。
+面向材料测试的 Windows 桌面计算平台（Python 3.14 + PySide6 6.11，中文界面），v0.4.0。
 
 ## ⚠️ 环境铁律
 
@@ -12,7 +12,7 @@
 
 ```bat
 py -3 main.py                                    :: 运行（源码）
-py -3 -m pytest tests/                           :: 175 个单元测试
+py -3 -m pytest tests/                           :: 187 个单元测试
 py -3 scripts/smoke_ui.py                        :: UI 冒烟（自动全流程，临时库+临时QSettings）
 py -3 scripts/build.py                           :: 一键双打包（中文名 EXE；build.bat 是其 ASCII 包装）
 powershell -NoProfile -File scripts/verify_exe.ps1  :: 验证打包 EXE（自动发现 dist 下文件夹版）
@@ -48,7 +48,7 @@ fiber_tensile/
 ## 当前状态（2026-08-18）
 
 - 四模块全部完成；**全部公式经 3 个独立 agent 以不同方法验证正确（≤1e-15）**，计算过程文本逐数字审计通过
-- 175 测试 + 冒烟全绿；git 提交历史完整（`git log` 可回溯所有决策）
+- 187 测试 + 冒烟全绿；git 提交历史完整（`git log` 可回溯所有决策）
 - 功能：手动+批量导入(Excel/CSV/TXT/曲线)、统计/Weibull/四方法表面能/混合法则/体积分数、Excel/PDF/CSV 导出、历史管理、批次对比、Zisman/Weibull/曲线图
 
 ## 下一步候选（按之前规划）
