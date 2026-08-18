@@ -1,6 +1,7 @@
 """core/weibull.py 测试。"""
 
 import math
+import warnings
 
 import numpy as np
 import pytest
@@ -145,3 +146,30 @@ def test_fit_invariance_under_unit_scaling():
     assert r_gpa.r2 == pytest.approx(r_mpa.r2, rel=1e-9)
     assert r_gpa.x == pytest.approx(
         [x - math.log(1000.0) for x in r_mpa.x], rel=1e-9)
+
+
+def test_mle_has_no_overflow_warning_and_is_scale_invariant():
+    rng = np.random.default_rng(7)
+    strengths = 3000.0 * rng.weibull(6.0, size=200)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", RuntimeWarning)
+        base = weibull_fit_mle(strengths)
+        scaled = weibull_fit_mle(strengths * 1e100)
+    # 浮点数乘 1e100 再取对数本身会带来约 1e-8 量级舍入，参数应在 1e-7 内不变。
+    assert scaled.m == pytest.approx(base.m, rel=1e-7)
+    assert scaled.sigma0 == pytest.approx(base.sigma0 * 1e100, rel=1e-7)
+
+
+def test_mle_extreme_dynamic_range_remains_finite():
+    strengths = np.geomspace(1e-150, 1e150, 30)
+    with warnings.catch_warnings():
+        warnings.simplefilter("error", RuntimeWarning)
+        result = weibull_fit_mle(strengths)
+    assert math.isfinite(result.m) and result.m > 0
+    assert math.isfinite(result.sigma0) and result.sigma0 > 0
+
+
+def test_mle_and_3p_reject_constant_data():
+    for fit in (weibull_fit_mle, weibull_fit_3p):
+        with pytest.raises(ValueError, match="全部相等"):
+            fit([5.0, 5.0, 5.0])

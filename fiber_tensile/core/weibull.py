@@ -79,14 +79,26 @@ def _mle_profile_2p(values) -> tuple:
     n = len(values)
     s = np.asarray(values, dtype=float)
     ln_s = np.log(s)
+    mean_ln_s = float(np.mean(ln_s))
+    centered_ln_s = ln_s - mean_ln_s
+
+    def log_mean_exp_centered(m):
+        scaled = m * centered_ln_s
+        peak = float(np.max(scaled))
+        return peak + math.log(float(np.exp(scaled - peak).sum())) - math.log(n)
+
+    def log_sigma0_of(m):
+        # ln σ₀ = [logsumexp(m·lnσᵢ) − ln(n)] / m。
+        # 在对数域计算，避免 σᵢ^m 在高模数或大强度时溢出。
+        return mean_ln_s + log_mean_exp_centered(m) / m
 
     def sigma0_of(m):
-        return float(np.mean(s ** m) ** (1.0 / m))
+        return float(math.exp(log_sigma0_of(m)))
 
     def neg_loglik(m):
-        # −ℓ_profile(m) = −n·ln m + n·m·ln σ₀(m) − (m−1)·Σln σᵢ（略去常数）
-        return (-n * math.log(m) + n * m * math.log(sigma0_of(m))
-                - (m - 1.0) * float(ln_s.sum()))
+        # 去掉与 m 无关的 n·mean(lnσ) 后，使用中心化对数形式，避免单位整体
+        # 缩放时两个巨大项相减造成消减误差。
+        return -n * math.log(m) + n * log_mean_exp_centered(m)
 
     gr = (math.sqrt(5.0) - 1.0) / 2.0
     lo, hi = 0.05, 200.0
@@ -111,6 +123,8 @@ def _check_strengths(values) -> None:
         raise ValueError("数据量不足，Weibull 分析至少需要 2 个数据点")
     if any(not math.isfinite(s) or s <= 0 for s in values):
         raise ValueError("强度值必须为正数")
+    if min(values) == max(values):
+        raise ValueError("数据全部相等，无法进行 Weibull 拟合（无分散性）")
 
 
 def _build_transformed(sorted_s, gamma: float) -> tuple:
@@ -171,7 +185,10 @@ def weibull_fit_3p(strengths) -> WeibullResult:
 
     def fval(m, sigma0, gamma):
         z = (s - gamma) / sigma0
-        return 1.0 - np.exp(-(z ** m))
+        # exp(m·ln z) 采用裁剪后的对数域计算，避免 z**m 溢出警告。
+        log_power = m * np.log(z)
+        power = np.exp(np.clip(log_power, -745.0, 709.0))
+        return -np.expm1(-power)
 
     def residual(v):
         m, sigma0, gamma = v
