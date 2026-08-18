@@ -18,6 +18,7 @@ from PySide6.QtWidgets import (
 from ..composites.ui import CompositesTab
 from ..config import APP_NAME, APP_VERSION, default_db_path
 from ..curve_analysis.ui import CurveAnalysisTab
+from ..excel_merger.ui import ExcelMergerTab
 from ..surface_energy.ui import SurfaceEnergyTab
 from . import prefs
 from .analysis_tab import AnalysisTab
@@ -67,6 +68,9 @@ class MainWindow(QMainWindow):
         self._nav.item(0).setToolTip("单丝/纺织纤维强度计算、统计与 Weibull 分析、曲线分析")
         self._nav.item(1).setToolTip("接触角法测量固体表面能：OWRK/Wu/Fowkes/Zisman 计算")
         self._nav.item(2).setToolTip("混合法则单层板常数、纤维体积分数与孔隙率")
+        self._nav.addItem(QListWidgetItem("表格数据提取合并模块"))
+        self._nav.item(3).setToolTip(
+            "从多个文件夹及子文件夹提取 Excel、CSV、TXT、TSV 并按样品名排序")
         root.addWidget(self._nav)
 
         # ---- 右侧堆叠页面 ----
@@ -96,6 +100,10 @@ class MainWindow(QMainWindow):
         # 模块三：复合材料基础计算
         self.composites_tab = CompositesTab(conn)
         self._stack.addWidget(self.composites_tab)
+
+        # 模块四：Excel 数据批量提取与合并（不使用数据库）
+        self.excel_merger_tab = ExcelMergerTab()
+        self._stack.addWidget(self.excel_merger_tab)
 
         root.addWidget(self._stack, 1)
         self.setCentralWidget(central)
@@ -134,7 +142,9 @@ class MainWindow(QMainWindow):
             "· 纤维拉伸强度分析模块：σ = 4F/(πd²) 单丝模式（GB/T 31290）、"
             "断裂强度 = F/线密度 纺织模式（GB/T 14337）、Weibull 分析<br>"
             "· 接触角表面能模块：OWRK 双液法 / Wu 调和平均法 / Fowkes 法 / "
-            "Zisman 法<br><br>"
+            "Zisman 法<br>"
+            "· 复合材料基础计算模块：工程常数、体积分数与孔隙率<br>"
+            "· 表格数据提取合并模块：Excel/CSV/TXT/TSV 扫描、样品排序与来源追踪<br><br>"
             "支持批量导入、Excel/PDF 报告导出。")
 
     def _on_data_saved(self, batch_id: int) -> None:

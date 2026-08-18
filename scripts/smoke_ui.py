@@ -244,17 +244,48 @@ def main() -> int:
     assert not st._figure_pane.isVisible()
 
     # 9. 模块导航栏：三个模块可切换并记忆，模块名过长自动换行
-    assert win._nav.count() == 3
+    assert win._nav.count() == 4
     assert win._nav.item(0).text() == "纤维拉伸强度分析模块"
     assert win._nav.item(1).text() == "接触角表面能模块"
     assert win._nav.item(2).text() == "复合材料基础计算模块"
+    assert win._nav.item(3).text() == "表格数据提取合并模块"
     assert "多功能计算平台" in win.windowTitle()
     assert win._nav.wordWrap() is True
     # 各模块界面区块之间有可拖拽分隔条（QSplitter）
     from PySide6.QtWidgets import QSplitter
     for tab in (win.entry_tab, win.analysis_tab, win.history_tab, win.surface_tab,
-                win.composites_tab):
+                win.composites_tab, win.excel_merger_tab):
         assert tab.findChild(QSplitter) is not None, type(tab).__name__
+
+    # 9b. Excel 合并模块：扫描两个工作簿，在线程中按表头对齐并生成预览
+    import openpyxl
+    merge_dir = tempfile.mkdtemp(prefix="excel_merge_smoke_")
+    for name, headers, row in (
+            ("拉伸_a.xlsx", ["样品名称", "强度"], ["样品10", 3.1]),
+            ("拉伸_b.xlsx", ["样品名称", "强度", "备注"], ["样品2", 3.2, "复测"])):
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = "数据"
+        ws.append(headers)
+        ws.append(row)
+        wb.save(os.path.join(merge_dir, name))
+    em = win.excel_merger_tab
+    em._folders.addItem(merge_dir)
+    em._edit_filename_filter.setText("拉伸")
+    em._scan()
+    assert em._files.rowCount() == 2
+    em._combo_sheet_mode.setCurrentIndex(2)
+    em._edit_sheet.setText("数")
+    em._start_preview()
+    from PySide6.QtCore import QEventLoop
+    merge_loop = QEventLoop()
+    em._thread.finished.connect(merge_loop.quit)
+    merge_loop.exec()
+    assert em._result is not None and len(em._result.rows) == 2
+    assert "来源文件" in em._result.headers and "备注" in em._result.headers
+    sample_col = em._result.headers.index("样品名称")
+    assert em._result.rows[0][sample_col] == "样品2"
+    assert em._preview.rowCount() == 2 and em._btn_export.isEnabled()
 
     # 10. 单丝曲线分析：平台校正（含 0.5mm 平台的合成曲线）
     ct = win.curve_tab
