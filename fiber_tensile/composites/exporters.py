@@ -1,6 +1,7 @@
 """复合材料基础计算报告的 Excel/PDF 导出。"""
 
 from datetime import datetime
+from ..fileio.excel_safe import set_cell_value
 
 _TYPE_LABELS = {"rom": "单层板工程常数（混合法则）", "volume_fraction": "纤维体积分数/孔隙率"}
 
@@ -38,14 +39,14 @@ def export_excel_report(path, calc_type, sample_name, inputs,
         row += 1
         for k, v in pairs:
             ws.cell(row, 1, k).font = Font(bold=True)
-            ws.cell(row, 2, v)
+            set_cell_value(ws.cell(row, 2), v)
             row += 1
         row += 1
     c = ws.cell(row, 1, "计算过程")
     c.font = Font(bold=True, size=12)
     row += 1
     for line in steps:
-        ws.cell(row, 1, line)
+        set_cell_value(ws.cell(row, 1), line)
         row += 1
     wb.save(path)
 

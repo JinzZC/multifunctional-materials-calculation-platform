@@ -1,6 +1,7 @@
 """单丝曲线分析报告的 Excel/PDF 导出。"""
 
 from datetime import datetime
+from ..fileio.excel_safe import set_cell_value
 
 
 def _build_rows(sample_name, diameter_um, gauge_mm, result, remark, test_date):
@@ -46,14 +47,14 @@ def export_excel_report(path, sample_name, diameter_um, gauge_mm, result,
         row += 1
         for k, v in pairs:
             ws.cell(row, 1, k).font = Font(bold=True)
-            ws.cell(row, 2, v)
+            set_cell_value(ws.cell(row, 2), v)
             row += 1
         row += 1
     c = ws.cell(row, 1, "计算过程")
     c.font = Font(bold=True, size=12)
     row += 1
     for line in steps:
-        ws.cell(row, 1, line)
+        set_cell_value(ws.cell(row, 1), line)
         row += 1
     fig = build_curve_figure(disp_mm, force_n, result)
     buf = BytesIO()

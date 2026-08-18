@@ -5,6 +5,7 @@ openpyxl/matplotlib 均为函数内延迟导入，避免拖慢应用启动。
 
 from ..core.models import MODE_LABELS
 from ..core.modes import get_mode_spec
+from .excel_safe import set_cell_value
 
 
 def _styles():
@@ -25,7 +26,7 @@ def _styles():
 def _write_kv(ws, row: int, key, value, styles) -> int:
     _, bold, _, _ = styles
     ws.cell(row, 1, key).font = bold
-    ws.cell(row, 2, value)
+    set_cell_value(ws.cell(row, 2), value)
     return row + 1
 
 
@@ -40,7 +41,7 @@ def _write_table(ws, row: int, headers: list, rows: list, styles) -> int:
     row += 1
     for r in rows:
         for col, v in enumerate(r, start=1):
-            c = ws.cell(row, col, v)
+            c = set_cell_value(ws.cell(row, col), v)
             c.border = border
             if isinstance(v, (int, float)):
                 c.number_format = "0.00"

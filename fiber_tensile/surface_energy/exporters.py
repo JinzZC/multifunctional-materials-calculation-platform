@@ -8,6 +8,7 @@ openpyxl/reportlab/matplotlib 均为函数内延迟导入。
 from datetime import datetime
 
 from .core import METHOD_LABELS, compute_surface_energy
+from ..fileio.excel_safe import set_cell_value
 
 _SE_TABLE_HEADERS = ["液体名称", "γ_L（表面张力, mN/m）", "γ^d（色散分量, mN/m）",
                      "γ^p（极性分量, mN/m）", "接触角 θ（度）"]
@@ -71,7 +72,7 @@ def export_excel_report(path, sample_name: str, method: str, points: list,
 
     def kv(row, k, v):
         ws.cell(row, 1, k).font = bold
-        ws.cell(row, 2, v)
+        set_cell_value(ws.cell(row, 2), v)
         return row + 1
 
     def table(wsx, row, headers, rows):
@@ -84,7 +85,7 @@ def export_excel_report(path, sample_name: str, method: str, points: list,
         row += 1
         for r in rows:
             for col, v in enumerate(r, start=1):
-                wsx.cell(row, col, v).border = border
+                set_cell_value(wsx.cell(row, col), v).border = border
             row += 1
         return row
 

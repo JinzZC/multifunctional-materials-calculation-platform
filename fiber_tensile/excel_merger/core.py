@@ -330,6 +330,7 @@ def export_merged_workbook(path: str | os.PathLike, result: MergeResult) -> None
     from openpyxl import Workbook
     from openpyxl.styles import Alignment, Font, PatternFill
     from openpyxl.utils import get_column_letter
+    from ..fileio.excel_safe import append_safe_row
 
     target = Path(path)
     if target.suffix.lower() != ".xlsx":
@@ -343,9 +344,9 @@ def export_merged_workbook(path: str | os.PathLike, result: MergeResult) -> None
     wb = Workbook(write_only=False)
     ws = wb.active
     ws.title = "合并数据"
-    ws.append(result.headers)
+    append_safe_row(ws, result.headers)
     for row in result.rows:
-        ws.append(row)
+        append_safe_row(ws, row)
     ws.freeze_panes = "A2"
     ws.auto_filter.ref = ws.dimensions
     fill = PatternFill("solid", fgColor="1F4E78")
@@ -357,12 +358,12 @@ def export_merged_workbook(path: str | os.PathLike, result: MergeResult) -> None
         ws.column_dimensions[get_column_letter(idx)].width = min(max(len(header) + 2, 12), 32)
 
     log = wb.create_sheet("合并日志")
-    log.append(["状态", "文件路径", "工作表", "提取行数", "列数", "说明"])
+    append_safe_row(log, ["状态", "文件路径", "工作表", "提取行数", "列数", "说明"])
     for status in result.statuses:
-        log.append([status.status, status.path, status.sheet, status.rows,
-                    status.columns, status.message])
+        append_safe_row(log, [status.status, status.path, status.sheet, status.rows,
+                              status.columns, status.message])
     for warning in result.warnings:
-        log.append(["警告", "", "", "", "", warning])
+        append_safe_row(log, ["警告", "", "", "", "", warning])
     log.freeze_panes = "A2"
     log.auto_filter.ref = log.dimensions
     for cell in log[1]:
