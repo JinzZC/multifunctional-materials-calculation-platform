@@ -3,9 +3,11 @@
 from pathlib import Path
 
 import openpyxl
+import pytest
 
 from fiber_tensile.excel_merger.core import (
-    MergeOptions, discover_excel_files, export_merged_workbook, merge_workbooks,
+    MergeCancelled, MergeOptions, MergeResult, discover_excel_files, export_merged_workbook,
+    merge_workbooks,
 )
 
 
@@ -136,7 +138,6 @@ def test_semicolon_csv_and_explicit_sample_column(tmp_path):
 def test_sort_requires_recognisable_sample_column(tmp_path):
     path = tmp_path / "unknown.csv"
     path.write_text("编号,值\nA,1\n", encoding="utf-8")
-    import pytest
     with pytest.raises(ValueError, match="样品名列"):
         merge_workbooks([path], MergeOptions(sort_by_sample=True))
 
@@ -235,3 +236,69 @@ def test_formula_text_mode_preserves_formula_without_cache_warning(tmp_path):
         [path], MergeOptions(include_source=False, formula_mode="formulas"))
     assert result.rows == [["样品1", "=SUM(1,2)"]]
     assert not any("没有缓存结果" in warning for warning in result.warnings)
+
+
+def test_column_mapping_unifies_instrument_headers(tmp_path):
+    one = tmp_path / "one.csv"
+    two = tmp_path / "two.csv"
+    one.write_text("试样名称,值\n样品2,2\n", encoding="utf-8")
+    two.write_text("Sample Name,值\n样品1,1\n", encoding="utf-8")
+    result = merge_workbooks([one, two], MergeOptions(
+        include_source=False, sort_by_sample=True,
+        column_mappings=(("试样名称", "样品名"), ("Sample Name", "样品名"))))
+    assert result.headers == ["样品名", "值"]
+    assert result.rows == [["样品1", "1"], ["样品2", "2"]]
+    assert sum("字段" in warning and "已统一" in warning for warning in result.warnings) == 2
+
+
+def test_duplicate_detection_keep_first_and_last(tmp_path):
+    path = tmp_path / "dup.csv"
+    path.write_text("样品名,日期,值\nA,2026-01-01,旧\nA,2026-01-01,新\nB,2026-01-01,唯一\n",
+                    encoding="utf-8")
+    common = dict(include_source=False, sort_by_sample=True,
+                  duplicate_columns=("样品名", "日期"))
+    first = merge_workbooks([path], MergeOptions(**common, duplicate_mode="first"))
+    last = merge_workbooks([path], MergeOptions(**common, duplicate_mode="last"))
+    assert first.rows == [["A", "2026-01-01", "旧"], ["B", "2026-01-01", "唯一"]]
+    assert last.rows == [["A", "2026-01-01", "新"], ["B", "2026-01-01", "唯一"]]
+    assert any("移除 1 行" in warning for warning in first.warnings)
+
+
+def test_keep_all_reports_duplicates_and_multi_column_sort(tmp_path):
+    path = tmp_path / "sort.csv"
+    path.write_text("样品名,测试序号,值\n样品2,10,A\n样品1,2,B\n样品1,1,C\n样品1,1,D\n",
+                    encoding="utf-8")
+    result = merge_workbooks([path], MergeOptions(
+        include_source=False, sort_by_sample=True, sort_columns=("测试序号",),
+        duplicate_mode="all", duplicate_columns=("样品名", "测试序号")))
+    assert [(row[0], row[1]) for row in result.rows] == [
+        ("样品1", "1"), ("样品1", "1"), ("样品1", "2"), ("样品2", "10")]
+    assert any("发现 1 条重复记录，已全部保留" in warning for warning in result.warnings)
+
+
+def test_progress_callback_and_cancellation(tmp_path):
+    paths = []
+    for index in range(3):
+        path = tmp_path / f"{index}.csv"
+        path.write_text("样品名,值\nA,1\n", encoding="utf-8")
+        paths.append(path)
+    progress = []
+    result = merge_workbooks(paths, progress_callback=lambda *args: progress.append(args))
+    assert len(result.rows) == 3
+    assert progress[0][:2] == (0, 3)
+    assert progress[-1][:2] == (3, 3)
+
+    checks = iter([False, True])
+    with pytest.raises(MergeCancelled):
+        merge_workbooks(paths, is_cancelled=lambda: next(checks, True))
+
+
+def test_export_splits_rows_across_multiple_data_sheets(tmp_path):
+    result = MergeResult(headers=["样品名", "值"],
+                         rows=[[f"样品{i}", i] for i in range(5)])
+    output = tmp_path / "split.xlsx"
+    export_merged_workbook(output, result, max_rows_per_sheet=3)  # 每表 1 行表头 + 2 行数据
+    wb = openpyxl.load_workbook(output, data_only=True)
+    assert wb.sheetnames == ["合并数据", "合并数据_2", "合并数据_3", "合并日志"]
+    assert [wb[name].max_row for name in wb.sheetnames[:3]] == [3, 3, 2]
+    assert "拆分为 3 个" in wb["合并日志"]["F2"].value

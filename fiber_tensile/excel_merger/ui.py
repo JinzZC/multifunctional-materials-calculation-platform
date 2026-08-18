@@ -9,11 +9,11 @@ from PySide6.QtWidgets import (
     QAbstractItemView, QCheckBox, QComboBox, QFileDialog, QFormLayout, QGroupBox,
     QHBoxLayout, QHeaderView, QLabel, QLineEdit, QListWidget, QMessageBox,
     QProgressBar, QPushButton, QSpinBox, QSplitter, QTableWidget,
-    QTableWidgetItem, QVBoxLayout, QWidget,
+    QTableWidgetItem, QTabWidget, QVBoxLayout, QWidget,
 )
 
 from .core import (MergeOptions, MergeResult, discover_excel_files,
-                   export_merged_workbook, merge_workbooks)
+                   MergeCancelled, export_merged_workbook, merge_workbooks)
 
 PREVIEW_LIMIT = 500
 
@@ -21,6 +21,8 @@ PREVIEW_LIMIT = 500
 class _MergeWorker(QObject):
     finished = Signal(object)
     failed = Signal(str)
+    cancelled = Signal()
+    progress = Signal(int, int, str)
 
     def __init__(self, paths, options, folders):
         super().__init__()
@@ -31,7 +33,12 @@ class _MergeWorker(QObject):
     @Slot()
     def run(self):
         try:
-            self.finished.emit(merge_workbooks(self.paths, self.options, self.folders))
+            self.finished.emit(merge_workbooks(
+                self.paths, self.options, self.folders,
+                progress_callback=self.progress.emit,
+                is_cancelled=lambda: QThread.currentThread().isInterruptionRequested()))
+        except MergeCancelled:
+            self.cancelled.emit()
         except Exception as exc:
             self.failed.emit(str(exc))
 
@@ -81,7 +88,15 @@ class ExcelMergerTab(QWidget):
         setup_layout.addWidget(folder_group, 3)
 
         option_group = QGroupBox("2. 提取设置")
-        form = QFormLayout(option_group)
+        option_layout = QVBoxLayout(option_group)
+        option_tabs = QTabWidget()
+        option_layout.addWidget(option_tabs)
+        scan_page = QWidget()
+        scan_form = QFormLayout(scan_page)
+        process_page = QWidget()
+        process_form = QFormLayout(process_page)
+        option_tabs.addTab(scan_page, "扫描与读取")
+        option_tabs.addTab(process_page, "整理与排序")
         self._spin_header = QSpinBox()
         self._spin_header.setRange(1, 1000)
         self._spin_header.setValue(1)
@@ -104,6 +119,9 @@ class ExcelMergerTab(QWidget):
         self._combo_columns = QComboBox()
         self._combo_columns.addItem("保留所有列（推荐）", "union")
         self._combo_columns.addItem("仅保留共同列", "intersection")
+        self._edit_column_mappings = QLineEdit()
+        self._edit_column_mappings.setPlaceholderText("例如：试样名称=样品名; Sample Name=样品名")
+        self._edit_column_mappings.setToolTip("多条规则用分号隔开，等号左边是原字段，右边是统一后的字段")
         self._combo_formula = QComboBox()
         self._combo_formula.addItem("优先提取计算结果（无缓存时保留公式并警告）", "values")
         self._combo_formula.addItem("保留公式文本", "formulas")
@@ -119,17 +137,30 @@ class ExcelMergerTab(QWidget):
         self._check_sort_sample.setChecked(True)
         self._edit_sample_column = QLineEdit()
         self._edit_sample_column.setPlaceholderText("留空则自动识别样品名/样品名称等")
-        form.addRow("表头所在行：", self._spin_header)
-        form.addRow("文件名包含：", self._edit_filename_filter)
-        form.addRow("工作表范围：", self._combo_sheet_mode)
-        form.addRow("工作表名称：", self._edit_sheet)
-        form.addRow("列合并方式：", self._combo_columns)
-        form.addRow("Excel 公式：", self._combo_formula)
-        form.addRow("扫描范围：", self._check_recursive)
-        form.addRow("结果追踪：", self._check_source)
-        form.addRow("空行处理：", self._check_empty)
-        form.addRow("结果排序：", self._check_sort_sample)
-        form.addRow("样品名列：", self._edit_sample_column)
+        self._edit_secondary_sort = QLineEdit()
+        self._edit_secondary_sort.setPlaceholderText("可选，例如：测试日期,测试序号")
+        self._combo_duplicates = QComboBox()
+        self._combo_duplicates.addItem("全部保留（仅报告重复）", "all")
+        self._combo_duplicates.addItem("重复时保留第一条", "first")
+        self._combo_duplicates.addItem("重复时保留最后一条", "last")
+        self._edit_duplicate_columns = QLineEdit()
+        self._edit_duplicate_columns.setPlaceholderText("留空使用样品名；多列用逗号分隔")
+        self._edit_duplicate_columns.setEnabled(False)
+        scan_form.addRow("文件名包含：", self._edit_filename_filter)
+        scan_form.addRow("扫描范围：", self._check_recursive)
+        scan_form.addRow("工作表范围：", self._combo_sheet_mode)
+        scan_form.addRow("工作表名称：", self._edit_sheet)
+        scan_form.addRow("表头所在行：", self._spin_header)
+        scan_form.addRow("Excel 公式：", self._combo_formula)
+        scan_form.addRow("空行处理：", self._check_empty)
+        process_form.addRow("列合并方式：", self._combo_columns)
+        process_form.addRow("字段统一规则：", self._edit_column_mappings)
+        process_form.addRow("结果追踪：", self._check_source)
+        process_form.addRow("结果排序：", self._check_sort_sample)
+        process_form.addRow("样品名列：", self._edit_sample_column)
+        process_form.addRow("次级排序列：", self._edit_secondary_sort)
+        process_form.addRow("重复数据：", self._combo_duplicates)
+        process_form.addRow("重复判定列：", self._edit_duplicate_columns)
         setup_layout.addWidget(option_group, 2)
         splitter.addWidget(setup)
 
@@ -164,12 +195,15 @@ class ExcelMergerTab(QWidget):
         self._btn_preview = QPushButton("提取并预览")
         self._btn_export = QPushButton("导出总 Excel")
         self._btn_export.setEnabled(False)
+        self._btn_cancel = QPushButton("取消提取")
+        self._btn_cancel.setVisible(False)
         self._progress = QProgressBar()
         self._progress.setRange(0, 0)
         self._progress.setVisible(False)
         self._lbl_summary = QLabel("请先添加文件夹并扫描")
         result_actions.addWidget(self._btn_preview)
         result_actions.addWidget(self._btn_export)
+        result_actions.addWidget(self._btn_cancel)
         result_actions.addWidget(self._progress)
         result_actions.addStretch()
         result_actions.addWidget(self._lbl_summary)
@@ -196,8 +230,12 @@ class ExcelMergerTab(QWidget):
         self._btn_none.clicked.connect(lambda: self._set_all_checked(False))
         self._btn_preview.clicked.connect(self._start_preview)
         self._btn_export.clicked.connect(self._export)
+        self._btn_cancel.clicked.connect(self._cancel_preview)
         self._combo_sheet_mode.currentIndexChanged.connect(self._sheet_mode_changed)
         self._check_sort_sample.toggled.connect(self._edit_sample_column.setEnabled)
+        self._combo_duplicates.currentIndexChanged.connect(
+            lambda _index: self._edit_duplicate_columns.setEnabled(
+                self._combo_duplicates.currentData() != "all"))
         self._edit_filename_filter.textChanged.connect(self._filename_filter_changed)
         self._check_recursive.toggled.connect(self._filename_filter_changed)
 
@@ -275,6 +313,23 @@ class ExcelMergerTab(QWidget):
             sheet = self._edit_sheet.text().strip()
             if not sheet:
                 raise ValueError("选择工作表名称筛选后，必须填写名称或包含的字符")
+        mappings = []
+        mapping_text = self._edit_column_mappings.text().strip()
+        if mapping_text:
+            for rule in mapping_text.replace("；", ";").split(";"):
+                if not rule.strip():
+                    continue
+                if "=" not in rule:
+                    raise ValueError(f"字段统一规则“{rule.strip()}”缺少等号")
+                source, target = rule.split("=", 1)
+                if not source.strip() or not target.strip():
+                    raise ValueError(f"字段统一规则“{rule.strip()}”不完整")
+                mappings.append((source.strip(), target.strip()))
+
+        def names(text):
+            return tuple(part.strip() for part in text.replace("，", ",").split(",")
+                         if part.strip())
+
         return MergeOptions(
             header_row=self._spin_header.value(), sheet_name=sheet,
             sheet_match_mode="contains" if sheet_mode_index == 2 else "exact",
@@ -284,7 +339,11 @@ class ExcelMergerTab(QWidget):
             skip_empty_rows=self._check_empty.isChecked(),
             sort_by_sample=self._check_sort_sample.isChecked(),
             sample_column=self._edit_sample_column.text().strip() or None,
-            formula_mode=self._combo_formula.currentData())
+            formula_mode=self._combo_formula.currentData(),
+            column_mappings=tuple(mappings),
+            sort_columns=names(self._edit_secondary_sort.text()),
+            duplicate_mode=self._combo_duplicates.currentData(),
+            duplicate_columns=names(self._edit_duplicate_columns.text()))
 
     def _sheet_mode_changed(self, index):
         self._edit_sheet.setEnabled(index in (1, 2))
@@ -310,10 +369,14 @@ class ExcelMergerTab(QWidget):
         self._thread.started.connect(self._worker.run)
         self._worker.finished.connect(self._preview_ready)
         self._worker.failed.connect(self._preview_failed)
+        self._worker.cancelled.connect(self._preview_cancelled)
+        self._worker.progress.connect(self._preview_progress)
         self._worker.finished.connect(self._thread.quit)
         self._worker.failed.connect(self._thread.quit)
+        self._worker.cancelled.connect(self._thread.quit)
         self._worker.finished.connect(self._worker.deleteLater)
         self._worker.failed.connect(self._worker.deleteLater)
+        self._worker.cancelled.connect(self._worker.deleteLater)
         self._thread.finished.connect(self._thread.deleteLater)
         self._thread.finished.connect(self._task_finished)
         self._thread.start()
@@ -328,6 +391,23 @@ class ExcelMergerTab(QWidget):
     def _preview_failed(self, message):
         self._set_busy(False)
         QMessageBox.critical(self, "提取失败", message)
+
+    @Slot()
+    def _preview_cancelled(self):
+        self._set_busy(False)
+        self._lbl_summary.setText("提取已取消，未生成新的合并结果")
+
+    @Slot(int, int, str)
+    def _preview_progress(self, completed, total, filename):
+        self._progress.setRange(0, max(total, 1))
+        self._progress.setValue(completed)
+        self._progress.setFormat(f"{completed}/{total}  {filename}")
+
+    def _cancel_preview(self):
+        if self._thread and self._thread.isRunning():
+            self._thread.requestInterruption()
+            self._btn_cancel.setEnabled(False)
+            self._btn_cancel.setText("正在取消……")
 
     @Slot()
     def _task_finished(self):
@@ -378,6 +458,12 @@ class ExcelMergerTab(QWidget):
 
     def _set_busy(self, busy):
         self._progress.setVisible(busy)
+        if busy:
+            self._progress.setRange(0, 0)
+            self._progress.setFormat("正在准备……")
+        self._btn_cancel.setVisible(busy)
+        self._btn_cancel.setEnabled(busy)
+        self._btn_cancel.setText("取消提取")
         self._btn_preview.setEnabled(not busy)
         self._btn_scan.setEnabled(not busy)
         self._btn_export.setEnabled(not busy and bool(self._result and self._result.rows))

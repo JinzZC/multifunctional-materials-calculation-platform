@@ -27,6 +27,10 @@ SAMPLE_NAME_ALIASES = {
 }
 
 
+class MergeCancelled(Exception):
+    """用户主动取消批量提取。"""
+
+
 @dataclass(frozen=True)
 class MergeOptions:
     header_row: int = 1
@@ -39,6 +43,10 @@ class MergeOptions:
     sort_by_sample: bool = False
     sample_column: str | None = None     # None 表示按常见别名自动识别
     formula_mode: str = "values"         # values（优先缓存值）/ formulas（保留公式文本）
+    column_mappings: tuple[tuple[str, str], ...] = ()
+    sort_columns: tuple[str, ...] = ()
+    duplicate_mode: str = "all"           # all / first / last
+    duplicate_columns: tuple[str, ...] = ()
 
 
 @dataclass
@@ -90,7 +98,8 @@ def discover_excel_files(folders: Iterable[str | os.PathLike], recursive: bool =
 
 
 def merge_workbooks(paths: Iterable[str | os.PathLike], options: MergeOptions | None = None,
-                    base_folders: Iterable[str | os.PathLike] = ()) -> MergeResult:
+                    base_folders: Iterable[str | os.PathLike] = (),
+                    progress_callback=None, is_cancelled=None) -> MergeResult:
     """读取 Excel/CSV/TXT 并按表头合并；单个损坏文件不会中断整个任务。"""
     from openpyxl import load_workbook
 
@@ -103,22 +112,33 @@ def merge_workbooks(paths: Iterable[str | os.PathLike], options: MergeOptions | 
         raise ValueError("工作表匹配方式必须是 exact 或 contains")
     if opts.formula_mode not in {"values", "formulas"}:
         raise ValueError("公式处理方式必须是 values 或 formulas")
+    if opts.duplicate_mode not in {"all", "first", "last"}:
+        raise ValueError("重复数据处理方式必须是 all、first 或 last")
 
     result = MergeResult()
-    records: list[tuple[dict[str, object], list[object]]] = []
+    records: list[dict[str, object]] = []
     display_names: dict[str, str] = {}
     key_orders: list[list[str]] = []
     # 保留该参数用于后续支持相对路径显示；当前始终记录完整目录，避免同名目录混淆。
     _ = base_folders
 
-    for raw_path in paths:
+    paths = list(paths)
+    for file_index, raw_path in enumerate(paths, 1):
+        _check_cancelled(is_cancelled)
         path = Path(raw_path).resolve()
+        if progress_callback:
+            progress_callback(file_index - 1, len(paths), path.name)
         if path.suffix.lower() in DELIMITED_SUFFIXES:
             try:
-                _extract_delimited(path, opts, result, records, display_names, key_orders)
+                _extract_delimited(path, opts, result, records, display_names, key_orders,
+                                   is_cancelled)
+            except MergeCancelled:
+                raise
             except Exception as exc:
                 result.statuses.append(FileStatus(
                     str(path), "分隔文本", status="失败", message=f"读取失败：{exc}"))
+            if progress_callback:
+                progress_callback(file_index, len(paths), path.name)
             continue
         wb = None
         formula_wb = None
@@ -160,7 +180,9 @@ def merge_workbooks(paths: Iterable[str | os.PathLike], options: MergeOptions | 
                 formula_ws = formula_wb[sheet_name] if formula_wb is not None else None
                 try:
                     _extract_sheet(path, ws, formula_ws, opts, result, records,
-                                   display_names, key_orders)
+                                   display_names, key_orders, is_cancelled)
+                except MergeCancelled:
+                    raise
                 except Exception as exc:
                     result.statuses.append(FileStatus(
                         str(path), sheet_name, status="失败", message=f"读取失败：{exc}"))
@@ -168,6 +190,8 @@ def merge_workbooks(paths: Iterable[str | os.PathLike], options: MergeOptions | 
             wb.close()
             if formula_wb is not None:
                 formula_wb.close()
+        if progress_callback:
+            progress_callback(file_index, len(paths), path.name)
 
     if not records:
         return result
@@ -183,21 +207,50 @@ def merge_workbooks(paths: Iterable[str | os.PathLike], options: MergeOptions | 
     result.headers = (list(SOURCE_HEADERS) if opts.include_source else []) + [
         display_names[key] for key in data_keys
     ]
-    for source, values in records:
+    for source in records:
         row = ([source[h] for h in SOURCE_HEADERS] if opts.include_source else [])
         value_map = source["__values__"]
         row.extend(value_map.get(key) for key in data_keys)
         result.rows.append(row)
+    sort_keys = _resolve_requested_keys(
+        data_keys, display_names, opts.sort_columns, "排序列")
     if opts.sort_by_sample:
-        sort_key = _resolve_sample_key(data_keys, display_names, opts.sample_column)
+        sample_key = _resolve_sample_key(data_keys, display_names, opts.sample_column)
+        sort_keys = [sample_key] + [key for key in sort_keys if key != sample_key]
+
+    if opts.duplicate_mode != "all" or opts.duplicate_columns or opts.sort_by_sample:
+        duplicate_keys = _resolve_requested_keys(
+            data_keys, display_names, opts.duplicate_columns, "重复判定列")
+        if not duplicate_keys:
+            duplicate_keys = ([sort_keys[0]] if sort_keys else [
+                _resolve_sample_key(data_keys, display_names, opts.sample_column)])
         offset = len(SOURCE_HEADERS) if opts.include_source else 0
-        column_index = offset + data_keys.index(sort_key)
-        result.rows.sort(key=lambda row: _natural_sort_key(row[column_index]))
-        result.warnings.append(f"合并结果已按“{display_names[sort_key]}”自然排序")
+        indices = [offset + data_keys.index(key) for key in duplicate_keys]
+        if opts.duplicate_mode == "all":
+            duplicates = _duplicate_count(result.rows, indices)
+            result.warnings.append(
+                f"重复数据检查列：{'、'.join(display_names[k] for k in duplicate_keys)}；"
+                f"发现 {duplicates} 条重复记录，已全部保留")
+        else:
+            before = len(result.rows)
+            result.rows = _deduplicate_rows(result.rows, indices, opts.duplicate_mode)
+            removed = before - len(result.rows)
+            result.warnings.append(
+                f"重复数据检查列：{'、'.join(display_names[k] for k in duplicate_keys)}；"
+                f"按“{'保留第一条' if opts.duplicate_mode == 'first' else '保留最后一条'}”"
+                f"移除 {removed} 行")
+
+    if sort_keys:
+        offset = len(SOURCE_HEADERS) if opts.include_source else 0
+        indices = [offset + data_keys.index(key) for key in sort_keys]
+        result.rows.sort(key=lambda row: tuple(_natural_sort_key(row[i]) for i in indices))
+        result.warnings.append(
+            f"合并结果已按“{'、'.join(display_names[k] for k in sort_keys)}”自然排序")
     return result
 
 
-def _extract_delimited(path, opts, result, records, display_names, key_orders) -> None:
+def _extract_delimited(path, opts, result, records, display_names, key_orders,
+                       is_cancelled=None) -> None:
     text, encoding = _decode_delimited(path.read_bytes())
     sample = text[:65536]
     try:
@@ -220,7 +273,7 @@ def _extract_delimited(path, opts, result, records, display_names, key_orders) -
         return
     max_columns = max([len(header_values)] + [len(row) for row in rows[opts.header_row:]])
     raw_headers = list(header_values) + [None] * (max_columns - len(header_values))
-    keys, names, header_warnings = _prepare_headers(raw_headers)
+    keys, names, header_warnings = _prepare_headers(raw_headers, opts.column_mappings)
     for warning in header_warnings:
         result.warnings.append(f"{path.name} / 分隔文本：{warning}")
     for key, name in zip(keys, names):
@@ -229,6 +282,8 @@ def _extract_delimited(path, opts, result, records, display_names, key_orders) -
 
     count = 0
     for row_number, raw in enumerate(rows[opts.header_row:], start=opts.header_row + 1):
+        if row_number % 1000 == 0:
+            _check_cancelled(is_cancelled)
         values = list(raw) + [None] * (max_columns - len(raw))
         if opts.skip_empty_rows and all(_blank(value) for value in values):
             continue
@@ -239,7 +294,7 @@ def _extract_delimited(path, opts, result, records, display_names, key_orders) -
             "原始行号": row_number,
             "__values__": {key: value for key, value in zip(keys, values)},
         }
-        records.append((source, values))
+        records.append(source)
         count += 1
     delimiter_name = {",": "逗号", "\t": "制表符", ";": "分号", "|": "竖线"}.get(
         delimiter, repr(delimiter))
@@ -272,6 +327,63 @@ def _resolve_sample_key(data_keys, display_names, requested):
         "未自动识别到样品名列；请在提取设置中填写实际列名，例如“样品名称”")
 
 
+def _resolve_requested_keys(data_keys, display_names, requested, label):
+    keys = []
+    for name in requested:
+        wanted = _normalise_header(name)
+        match = next((key for key in data_keys
+                      if key == wanted or _normalise_header(display_names[key]) == wanted), None)
+        if match is None:
+            raise ValueError(f"{label}“{name}”不存在，请检查字段名称")
+        if match not in keys:
+            keys.append(match)
+    return keys
+
+
+def _deduplicate_rows(rows, indices, mode):
+    if mode == "first":
+        seen, output = set(), []
+        for row in rows:
+            key = _row_identity(row, indices)
+            if key is not None and key in seen:
+                continue
+            if key is not None:
+                seen.add(key)
+            output.append(row)
+        return output
+    seen, output = set(), []
+    for row in reversed(rows):
+        key = _row_identity(row, indices)
+        if key is not None and key in seen:
+            continue
+        if key is not None:
+            seen.add(key)
+        output.append(row)
+    output.reverse()
+    return output
+
+
+def _duplicate_count(rows, indices):
+    seen, duplicates = set(), 0
+    for row in rows:
+        key = _row_identity(row, indices)
+        if key is None:
+            continue
+        if key in seen:
+            duplicates += 1
+        else:
+            seen.add(key)
+    return duplicates
+
+
+def _row_identity(row, indices):
+    values = tuple(row[index] for index in indices)
+    if all(_blank(value) for value in values):
+        return None
+    return tuple(_normalise_header(str(value)) if isinstance(value, str) else value
+                 for value in values)
+
+
 def _natural_sort_key(value):
     if _blank(value):
         return (1, ())
@@ -284,7 +396,7 @@ def _natural_sort_key(value):
 
 
 def _extract_sheet(path, ws, formula_ws, opts, result, records,
-                   display_names, key_orders) -> None:
+                   display_names, key_orders, is_cancelled=None) -> None:
     header_cells = next(ws.iter_rows(min_row=opts.header_row, max_row=opts.header_row), None)
     formula_header_cells = (next(formula_ws.iter_rows(
         min_row=opts.header_row, max_row=opts.header_row), None)
@@ -298,7 +410,7 @@ def _extract_sheet(path, ws, formula_ws, opts, result, records,
 
     last = max(i for i, value in enumerate(header_values) if not _blank(value)) + 1
     raw_headers = list(header_values[:last])
-    keys, names, header_warnings = _prepare_headers(raw_headers)
+    keys, names, header_warnings = _prepare_headers(raw_headers, opts.column_mappings)
     for warning in header_warnings:
         result.warnings.append(f"{path.name} / {ws.title}：{warning}")
     for key, name in zip(keys, names):
@@ -311,6 +423,8 @@ def _extract_sheet(path, ws, formula_ws, opts, result, records,
     formula_rows = (formula_ws.iter_rows(min_row=opts.header_row + 1, max_col=last)
                     if formula_ws is not None else None)
     for row_number, value_cells in enumerate(value_rows, start=opts.header_row + 1):
+        if row_number % 1000 == 0:
+            _check_cancelled(is_cancelled)
         formula_cells = next(formula_rows, None) if formula_rows is not None else None
         values, missing = _effective_row(value_cells, formula_cells, opts.formula_mode)
         missing_formula_count += missing
@@ -324,7 +438,7 @@ def _extract_sheet(path, ws, formula_ws, opts, result, records,
             "原始行号": row_number,
             "__values__": value_map,
         }
-        records.append((source, values))
+        records.append(source)
         count += 1
     result.statuses.append(FileStatus(str(path), ws.title, rows=count, columns=len(keys),
                                       message="无数据行" if count == 0 else ""))
@@ -350,13 +464,19 @@ def _effective_row(value_cells, formula_cells, formula_mode):
     return values, missing
 
 
-def _prepare_headers(values: list[object]) -> tuple[list[str], list[str], list[str]]:
+def _prepare_headers(values: list[object], mappings=()) -> tuple[list[str], list[str], list[str]]:
     keys, names, warnings = [], [], []
     used: dict[str, int] = {}
+    mapping = {_normalise_header(source): target.strip()
+               for source, target in mappings if source.strip() and target.strip()}
     for index, value in enumerate(values, 1):
         name = str(value).strip() if not _blank(value) else f"未命名列_{index}"
         if _blank(value):
             warnings.append(f"第 {index} 列表头为空，已命名为“{name}”")
+        mapped = mapping.get(_normalise_header(name))
+        if mapped:
+            warnings.append(f"字段“{name}”已统一为“{mapped}”")
+            name = mapped
         base = _normalise_header(name)
         number = used.get(base, 0) + 1
         used[base] = number
@@ -370,7 +490,8 @@ def _prepare_headers(values: list[object]) -> tuple[list[str], list[str], list[s
     return keys, names, warnings
 
 
-def export_merged_workbook(path: str | os.PathLike, result: MergeResult) -> None:
+def export_merged_workbook(path: str | os.PathLike, result: MergeResult,
+                           max_rows_per_sheet: int = EXCEL_MAX_ROWS) -> None:
     """原子写出合并结果和处理日志，避免中途失败留下不完整文件。"""
     from openpyxl import Workbook
     from openpyxl.styles import Alignment, Font, PatternFill
@@ -382,25 +503,30 @@ def export_merged_workbook(path: str | os.PathLike, result: MergeResult) -> None
         target = target.with_suffix(".xlsx")
     if not result.headers or not result.rows:
         raise ValueError("没有可导出的合并数据")
-    if len(result.rows) + 1 > EXCEL_MAX_ROWS:
-        raise ValueError(f"数据共 {len(result.rows):,} 行，超过单个 Excel 工作表上限")
+    if max_rows_per_sheet < 2 or max_rows_per_sheet > EXCEL_MAX_ROWS:
+        raise ValueError(f"每个工作表行数必须在 2 到 {EXCEL_MAX_ROWS:,} 之间")
     target.parent.mkdir(parents=True, exist_ok=True)
 
     wb = Workbook(write_only=False)
-    ws = wb.active
-    ws.title = "合并数据"
-    append_safe_row(ws, result.headers)
-    for row in result.rows:
-        append_safe_row(ws, row)
-    ws.freeze_panes = "A2"
-    ws.auto_filter.ref = ws.dimensions
     fill = PatternFill("solid", fgColor="1F4E78")
-    for cell in ws[1]:
-        cell.font = Font(color="FFFFFF", bold=True)
-        cell.fill = fill
-        cell.alignment = Alignment(horizontal="center")
-    for idx, header in enumerate(result.headers, 1):
-        ws.column_dimensions[get_column_letter(idx)].width = min(max(len(header) + 2, 12), 32)
+    data_capacity = max_rows_per_sheet - 1
+    sheet_count = (len(result.rows) + data_capacity - 1) // data_capacity
+    for sheet_index in range(sheet_count):
+        ws = wb.active if sheet_index == 0 else wb.create_sheet()
+        ws.title = "合并数据" if sheet_index == 0 else f"合并数据_{sheet_index + 1}"
+        append_safe_row(ws, result.headers)
+        start = sheet_index * data_capacity
+        for row in result.rows[start:start + data_capacity]:
+            append_safe_row(ws, row)
+        ws.freeze_panes = "A2"
+        ws.auto_filter.ref = ws.dimensions
+        for cell in ws[1]:
+            cell.font = Font(color="FFFFFF", bold=True)
+            cell.fill = fill
+            cell.alignment = Alignment(horizontal="center")
+        for idx, header in enumerate(result.headers, 1):
+            ws.column_dimensions[get_column_letter(idx)].width = min(
+                max(len(header) + 2, 12), 32)
 
     log = wb.create_sheet("合并日志")
     append_safe_row(log, ["状态", "文件路径", "工作表", "提取行数", "列数", "说明"])
@@ -409,6 +535,9 @@ def export_merged_workbook(path: str | os.PathLike, result: MergeResult) -> None
                               status.columns, status.message])
     for warning in result.warnings:
         append_safe_row(log, ["警告", "", "", "", "", warning])
+    if sheet_count > 1:
+        append_safe_row(log, ["信息", "", "", "", "",
+                              f"数据超过单表容量，已拆分为 {sheet_count} 个数据工作表"])
     log.freeze_panes = "A2"
     log.auto_filter.ref = log.dimensions
     for cell in log[1]:
@@ -443,6 +572,11 @@ def _normalise_filename_text(value: str) -> str:
 
 def _blank(value) -> bool:
     return value is None or (isinstance(value, str) and not value.strip())
+
+
+def _check_cancelled(is_cancelled):
+    if is_cancelled is not None and is_cancelled():
+        raise MergeCancelled("用户已取消提取")
 
 
 def _resolved(path) -> str:
