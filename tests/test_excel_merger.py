@@ -206,3 +206,32 @@ def test_filename_filter_ignores_case_and_fullwidth(tmp_path):
     _write(tmp_path / "other.xlsx", "数据", ["样品名"], [["B"]])
     found = discover_excel_files([tmp_path], filename_contains="test")
     assert [path.name for path in found] == ["ＴＥＳＴ_Result.xlsx"]
+
+
+def test_formula_without_cached_value_is_preserved_and_warned(tmp_path):
+    path = tmp_path / "formula.xlsx"
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.append(["样品名", "计算值"])
+    ws.append(["样品1", "=1+2"])
+    wb.save(path)
+
+    result = merge_workbooks(
+        [path], MergeOptions(include_source=False, formula_mode="values"))
+    assert result.rows == [["样品1", "=1+2"]]
+    assert any("没有缓存结果" in warning and "1 个公式单元格" in warning
+               for warning in result.warnings)
+
+
+def test_formula_text_mode_preserves_formula_without_cache_warning(tmp_path):
+    path = tmp_path / "formula.xlsx"
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.append(["样品名", "计算值"])
+    ws.append(["样品1", "=SUM(1,2)"])
+    wb.save(path)
+
+    result = merge_workbooks(
+        [path], MergeOptions(include_source=False, formula_mode="formulas"))
+    assert result.rows == [["样品1", "=SUM(1,2)"]]
+    assert not any("没有缓存结果" in warning for warning in result.warnings)

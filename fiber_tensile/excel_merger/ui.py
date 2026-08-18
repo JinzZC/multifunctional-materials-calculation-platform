@@ -104,6 +104,11 @@ class ExcelMergerTab(QWidget):
         self._combo_columns = QComboBox()
         self._combo_columns.addItem("保留所有列（推荐）", "union")
         self._combo_columns.addItem("仅保留共同列", "intersection")
+        self._combo_formula = QComboBox()
+        self._combo_formula.addItem("优先提取计算结果（无缓存时保留公式并警告）", "values")
+        self._combo_formula.addItem("保留公式文本", "formulas")
+        self._combo_formula.setToolTip(
+            "部分仪器生成的 Excel 没有公式缓存；软件不会再把这类单元格静默提取为空")
         self._check_recursive = QCheckBox("包含子文件夹")
         self._check_recursive.setChecked(True)
         self._check_source = QCheckBox("添加来源追踪列")
@@ -119,6 +124,7 @@ class ExcelMergerTab(QWidget):
         form.addRow("工作表范围：", self._combo_sheet_mode)
         form.addRow("工作表名称：", self._edit_sheet)
         form.addRow("列合并方式：", self._combo_columns)
+        form.addRow("Excel 公式：", self._combo_formula)
         form.addRow("扫描范围：", self._check_recursive)
         form.addRow("结果追踪：", self._check_source)
         form.addRow("空行处理：", self._check_empty)
@@ -277,7 +283,8 @@ class ExcelMergerTab(QWidget):
             column_mode=self._combo_columns.currentData(),
             skip_empty_rows=self._check_empty.isChecked(),
             sort_by_sample=self._check_sort_sample.isChecked(),
-            sample_column=self._edit_sample_column.text().strip() or None)
+            sample_column=self._edit_sample_column.text().strip() or None,
+            formula_mode=self._combo_formula.currentData())
 
     def _sheet_mode_changed(self, index):
         self._edit_sheet.setEnabled(index in (1, 2))

@@ -38,6 +38,7 @@ class MergeOptions:
     skip_empty_rows: bool = True
     sort_by_sample: bool = False
     sample_column: str | None = None     # None 表示按常见别名自动识别
+    formula_mode: str = "values"         # values（优先缓存值）/ formulas（保留公式文本）
 
 
 @dataclass
@@ -100,6 +101,8 @@ def merge_workbooks(paths: Iterable[str | os.PathLike], options: MergeOptions | 
         raise ValueError("列合并方式必须是 union 或 intersection")
     if opts.sheet_match_mode not in {"exact", "contains"}:
         raise ValueError("工作表匹配方式必须是 exact 或 contains")
+    if opts.formula_mode not in {"values", "formulas"}:
+        raise ValueError("公式处理方式必须是 values 或 formulas")
 
     result = MergeResult()
     records: list[tuple[dict[str, object], list[object]]] = []
@@ -117,9 +120,20 @@ def merge_workbooks(paths: Iterable[str | os.PathLike], options: MergeOptions | 
                 result.statuses.append(FileStatus(
                     str(path), "分隔文本", status="失败", message=f"读取失败：{exc}"))
             continue
+        wb = None
+        formula_wb = None
         try:
-            wb = load_workbook(path, read_only=True, data_only=True)
+            if opts.formula_mode == "formulas":
+                wb = load_workbook(path, read_only=True, data_only=False)
+            else:
+                wb = load_workbook(path, read_only=True, data_only=True)
+                # 第二份只用于识别公式及在缓存缺失时保留公式文本。
+                formula_wb = load_workbook(path, read_only=True, data_only=False)
         except Exception as exc:
+            if wb is not None:
+                wb.close()
+            if formula_wb is not None:
+                formula_wb.close()
             result.statuses.append(FileStatus(str(path), "—", status="失败",
                                               message=f"无法打开：{exc}"))
             continue
@@ -143,14 +157,17 @@ def merge_workbooks(paths: Iterable[str | os.PathLike], options: MergeOptions | 
                         str(path), sheet_name, status="跳过", message="工作表不存在"))
                     continue
                 ws = wb[sheet_name]
+                formula_ws = formula_wb[sheet_name] if formula_wb is not None else None
                 try:
-                    _extract_sheet(path, ws, opts, result, records,
+                    _extract_sheet(path, ws, formula_ws, opts, result, records,
                                    display_names, key_orders)
                 except Exception as exc:
                     result.statuses.append(FileStatus(
                         str(path), sheet_name, status="失败", message=f"读取失败：{exc}"))
         finally:
             wb.close()
+            if formula_wb is not None:
+                formula_wb.close()
 
     if not records:
         return result
@@ -266,9 +283,14 @@ def _natural_sort_key(value):
     return (0, tokens)
 
 
-def _extract_sheet(path, ws, opts, result, records, display_names, key_orders) -> None:
-    header_values = next(ws.iter_rows(min_row=opts.header_row, max_row=opts.header_row,
-                                      values_only=True), None)
+def _extract_sheet(path, ws, formula_ws, opts, result, records,
+                   display_names, key_orders) -> None:
+    header_cells = next(ws.iter_rows(min_row=opts.header_row, max_row=opts.header_row), None)
+    formula_header_cells = (next(formula_ws.iter_rows(
+        min_row=opts.header_row, max_row=opts.header_row), None)
+        if formula_ws is not None else None)
+    header_values, missing_formula_count = _effective_row(
+        header_cells, formula_header_cells, opts.formula_mode)
     if not header_values or not any(not _blank(v) for v in header_values):
         result.statuses.append(FileStatus(str(path), ws.title, status="跳过",
                                           message=f"第 {opts.header_row} 行没有表头"))
@@ -285,10 +307,13 @@ def _extract_sheet(path, ws, opts, result, records, display_names, key_orders) -
 
     count = 0
     folder_label = str(path.parent)
-    for row_number, raw in enumerate(
-            ws.iter_rows(min_row=opts.header_row + 1, max_col=last, values_only=True),
-            start=opts.header_row + 1):
-        values = list(raw)
+    value_rows = ws.iter_rows(min_row=opts.header_row + 1, max_col=last)
+    formula_rows = (formula_ws.iter_rows(min_row=opts.header_row + 1, max_col=last)
+                    if formula_ws is not None else None)
+    for row_number, value_cells in enumerate(value_rows, start=opts.header_row + 1):
+        formula_cells = next(formula_rows, None) if formula_rows is not None else None
+        values, missing = _effective_row(value_cells, formula_cells, opts.formula_mode)
+        missing_formula_count += missing
         if opts.skip_empty_rows and all(_blank(v) for v in values):
             continue
         value_map = {key: value for key, value in zip(keys, values)}
@@ -303,6 +328,26 @@ def _extract_sheet(path, ws, opts, result, records, display_names, key_orders) -
         count += 1
     result.statuses.append(FileStatus(str(path), ws.title, rows=count, columns=len(keys),
                                       message="无数据行" if count == 0 else ""))
+    if missing_formula_count:
+        result.warnings.append(
+            f"{path.name} / {ws.title}：{missing_formula_count} 个公式单元格没有缓存结果，"
+            "已保留公式文本，请用 Excel 重新计算源文件后再提取以获得数值")
+
+
+def _effective_row(value_cells, formula_cells, formula_mode):
+    """返回一行有效值；缓存缺失时不静默丢弃公式。"""
+    if value_cells is None:
+        return [], 0
+    if formula_mode == "formulas" or formula_cells is None:
+        return [cell.value for cell in value_cells], 0
+    values, missing = [], 0
+    for value_cell, formula_cell in zip(value_cells, formula_cells):
+        value = value_cell.value
+        if formula_cell.data_type == "f" and value is None:
+            value = formula_cell.value
+            missing += 1
+        values.append(value)
+    return values, missing
 
 
 def _prepare_headers(values: list[object]) -> tuple[list[str], list[str], list[str]]:
