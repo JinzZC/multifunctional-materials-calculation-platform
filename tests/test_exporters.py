@@ -62,6 +62,21 @@ def test_excel_report_roundtrip(tmp_path, filament_batch):
     assert ws3["C2"].value == pytest.approx(0.1)                      # n=5 时第一个 median rank
 
 
+def test_excel_report_records_origin_rank_method(tmp_path, filament_batch):
+    strengths = [s.strength for s in filament_batch.samples]
+    analysis = batch_statistics(strengths)
+    weibull = weibull_fit(strengths, "mean_rank")
+    out = tmp_path / "origin-rank.xlsx"
+    export_excel_report(out, filament_batch, analysis, weibull)
+
+    wb = openpyxl.load_workbook(out)
+    summary = _cell_texts(wb["统计汇总"])
+    assert "Origin 兼容（Mean Rank / Van der Waerden）" in summary
+    assert "Origin 兼容" in wb["Weibull 分析数据"]["C1"].value
+    assert wb["Weibull 分析数据"]["C2"].value == pytest.approx(1 / 6, abs=5e-7)
+    assert wb["Weibull 分析数据"]["E1"].value == "ln(−ln(1−F̂))"
+
+
 def test_excel_report_single_sample_no_weibull(tmp_path, db_conn):
     bid = create_batch(db_conn, Batch(batch_name="单根", mode=MODE_FILAMENT))
     add_samples(db_conn, bid, [Sample(breaking_force=10.0, diameter_um=7.0)])

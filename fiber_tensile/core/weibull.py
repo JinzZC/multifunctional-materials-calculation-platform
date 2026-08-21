@@ -7,7 +7,7 @@
 
 拟合步骤：
     1. 强度升序排序 σ₁ ≤ σ₂ ≤ … ≤ σ_N
-    2. 失效概率用 median rank 估计：F̂ᵢ = (i−0.5)/N，天然落在 (0,1) 内
+    2. 失效概率按所选绘图位置方法估计（默认 Hazen）
     3. xᵢ = ln(σᵢ)，yᵢ = ln(−ln(1−F̂ᵢ))，最小二乘回归
     4. m = 斜率；由截距 a = −m·ln(σ₀) 反推 σ₀ = exp(−a/m)
 
@@ -21,14 +21,43 @@ import numpy as np
 from .models import WeibullResult
 
 
-def median_ranks(n: int) -> list:
-    """median rank：F̂ᵢ = (i − 0.5) / n，i = 1..n。"""
+RANK_METHODS = {
+    "hazen": ("Hazen（现有默认）", "(i − 0.5) / N"),
+    "mean_rank": ("Origin 兼容（Mean Rank / Van der Waerden）", "i / (N + 1)"),
+    "benard": ("Benard 中位秩", "(i − 0.3) / (N + 0.4)"),
+    "blom": ("Blom", "(i − 0.375) / (N + 0.25)"),
+}
+
+
+def rank_method_label(method: str) -> str:
+    """返回绘图位置方法的可读名称。"""
+    try:
+        return RANK_METHODS[method][0]
+    except KeyError:
+        raise ValueError(f"未知的 Weibull 排序概率方法：{method!r}") from None
+
+
+def plotting_positions(n: int, method: str = "hazen") -> list:
+    """计算 Weibull 绘图位置 F̂ᵢ，i = 1..N。"""
     if n < 2:
         raise ValueError("Weibull 分析至少需要 2 个数据点")
-    return [(i + 0.5) / n for i in range(n)]
+    if method not in RANK_METHODS:
+        raise ValueError(f"未知的 Weibull 排序概率方法：{method!r}")
+    if method == "hazen":
+        return [(i - 0.5) / n for i in range(1, n + 1)]
+    if method == "mean_rank":
+        return [i / (n + 1.0) for i in range(1, n + 1)]
+    if method == "benard":
+        return [(i - 0.3) / (n + 0.4) for i in range(1, n + 1)]
+    return [(i - 0.375) / (n + 0.25) for i in range(1, n + 1)]
 
 
-def weibull_fit(strengths) -> WeibullResult:
+def median_ranks(n: int) -> list:
+    """兼容旧接口：返回 Hazen 绘图位置。"""
+    return plotting_positions(n, "hazen")
+
+
+def weibull_fit(strengths, rank_method: str = "hazen") -> WeibullResult:
     """对强度序列做 2 参数 Weibull 拟合，返回 m、σ₀、R² 及变换后的数据。"""
     values = [float(s) for s in strengths]
     if len(values) < 2:
@@ -40,7 +69,7 @@ def weibull_fit(strengths) -> WeibullResult:
     n = len(sorted_strengths)
     if sorted_strengths[0] == sorted_strengths[-1]:
         raise ValueError("数据全部相等，无法进行 Weibull 拟合（无分散性）")
-    f_hat = median_ranks(n)
+    f_hat = plotting_positions(n, rank_method)
     x = np.log(sorted_strengths)
     y = np.log(-np.log(1.0 - np.asarray(f_hat)))
 
@@ -53,11 +82,20 @@ def weibull_fit(strengths) -> WeibullResult:
     sigma0 = float(math.exp(-intercept / m))
     r2 = float(np.corrcoef(x, y)[0, 1] ** 2)
 
+    rank_label, rank_formula = RANK_METHODS[rank_method]
+    steps = [
+        "计算过程（Weibull 二参数线性最小二乘）",
+        f"① 强度升序排列，样本数 N = {n}",
+        f"② 排序概率：{rank_label}，F̂ᵢ = {rank_formula}",
+        "③ 线性化：xᵢ = ln(σᵢ)，yᵢ = ln[−ln(1−F̂ᵢ)]",
+        f"④ 普通最小二乘拟合 y = m·x + a：m = {m:.6f}，a = {intercept:.6f}",
+        f"⑤ σ₀ = exp(−a/m) = {sigma0:.6g}，R² = {r2:.6f}",
+    ]
     return WeibullResult(
         m=m, sigma0=sigma0, r2=r2,
         strengths_sorted=sorted_strengths,
         median_ranks=f_hat,
-        x=x.tolist(), y=y.tolist(),
+        x=x.tolist(), y=y.tolist(), steps=steps, rank_method=rank_method,
     )
 
 
@@ -127,26 +165,26 @@ def _check_strengths(values) -> None:
         raise ValueError("数据全部相等，无法进行 Weibull 拟合（无分散性）")
 
 
-def _build_transformed(sorted_s, gamma: float) -> tuple:
-    """构造 median rank 线性化坐标（x = ln(σ−γ)）。"""
+def _build_transformed(sorted_s, gamma: float, rank_method: str = "hazen") -> tuple:
+    """按所选绘图位置构造线性化坐标（x = ln(σ−γ)）。"""
     n = len(sorted_s)
-    f_hat = median_ranks(n)
+    f_hat = plotting_positions(n, rank_method)
     x = np.log(np.asarray(sorted_s) - gamma)
     y = np.log(-np.log(1.0 - np.asarray(f_hat)))
     return x, y, f_hat
 
 
-def weibull_fit_mle(strengths) -> WeibullResult:
+def weibull_fit_mle(strengths, rank_method: str = "hazen") -> WeibullResult:
     """2 参数 Weibull 极大似然估计（参数估计统计意义上最优）。
 
-    注意：结果中的 R² 仍为 median rank 线性化下的拟合优度参考；
+    注意：结果中的 R² 为所选绘图位置线性化下的拟合优度参考；
     该度量下最小二乘法最优，MLE 的优势在参数无偏性与效率。
     """
     values = [float(s) for s in strengths]
     _check_strengths(values)
     sorted_s = sorted(values)
     m, sigma0 = _mle_profile_2p(values)
-    x, y, f_hat = _build_transformed(sorted_s, 0.0)
+    x, y, f_hat = _build_transformed(sorted_s, 0.0, rank_method)
     y_pred = m * x - m * math.log(sigma0)
     r2 = _fit_r2(y, y_pred)
     steps = [
@@ -157,23 +195,24 @@ def weibull_fit_mle(strengths) -> WeibullResult:
         "因此只需对 m 做一维黄金分割搜索",
         f"③ 黄金分割搜索区间 m ∈ [0.05, 200]，收敛容差 1e-8",
         f"④ 结果：Weibull 模数 m = {m:.4f}，特征强度 σ₀ = {sigma0:.2f}",
-        f"⑤ median rank 线性化下的拟合优度 R² = {r2:.4f}（最小二乘法在该度量下最优，"
+        f"⑤ {rank_method_label(rank_method)} 线性化下的拟合优度 R² = {r2:.4f}（最小二乘法在该度量下最优，"
         "MLE 的优势是参数估计的统计最优性）",
         "⑥ 注：小样本（n<30）时 MLE 的 m 存在正偏倚，工程上可用 "
         "m×(n−1)/n 修正，本工具显示未修正值",
     ]
     return WeibullResult(
         m=m, sigma0=sigma0, r2=r2, strengths_sorted=sorted_s,
-        median_ranks=f_hat, x=x.tolist(), y=y.tolist(), gamma=0.0, steps=steps)
+        median_ranks=f_hat, x=x.tolist(), y=y.tolist(), gamma=0.0, steps=steps,
+        rank_method=rank_method)
 
 
-def weibull_fit_3p(strengths) -> WeibullResult:
-    """3 参数 Weibull（位置参数 γ）median rank 非线性最小二乘。
+def weibull_fit_3p(strengths, rank_method: str = "hazen") -> WeibullResult:
+    """3 参数 Weibull（位置参数 γ）非线性最小二乘。
 
-    最小化 Σ(F̂ᵢ − F(σᵢ; m, σ₀, γ))²（F̂ 为 median rank），用带阻尼的
+    最小化 Σ(F̂ᵢ − F(σᵢ; m, σ₀, γ))²（F̂ 按所选绘图位置计算），用带阻尼的
     Gauss-Newton（数值雅可比）求解。说明：3 参数 Weibull 的极大似然在
     γ→最小强度处常退化（文献已知病理），故采用非线性最小二乘，
-    与 2 参数标准法同口径，直接优化 median rank 拟合优度。
+    与 2 参数线性法的排序概率口径保持一致。
     """
     values = [float(s) for s in strengths]
     _check_strengths(values)
@@ -181,7 +220,7 @@ def weibull_fit_3p(strengths) -> WeibullResult:
     s = np.asarray(sorted_s, dtype=float)
     n = len(s)
     s_min = float(s[0])
-    f_hat = np.asarray(median_ranks(n))
+    f_hat = np.asarray(plotting_positions(n, rank_method))
 
     def fval(m, sigma0, gamma):
         z = (s - gamma) / sigma0
@@ -197,7 +236,7 @@ def weibull_fit_3p(strengths) -> WeibullResult:
         return f_hat - fval(m, sigma0, gamma)
 
     # 初值：2 参数最小二乘解，γ=0
-    seed = weibull_fit(values)
+    seed = weibull_fit(values, rank_method)
     v = np.array([seed.m, seed.sigma0, 0.0])
     iters = 0
     converged = False
@@ -234,19 +273,20 @@ def weibull_fit_3p(strengths) -> WeibullResult:
 
     # 退化防护：γ 逼近最小强度或模数过小时退回 2 参数
     if (not converged and iters >= 200) or gamma >= 0.75 * s_min or m < 0.05:
-        r = weibull_fit(values)
+        r = weibull_fit(values, rank_method)
         r.steps.insert(0, "3 参数拟合无稳定解（γ 趋于最小强度），已退回 2 参数最小二乘：")
         return r
 
     gamma = max(gamma, 0.0)
-    x, y, f_hat_l = _build_transformed(sorted_s, gamma)
+    x, y, f_hat_l = _build_transformed(sorted_s, gamma, rank_method)
     y_pred = m * x - m * math.log(sigma0)
     r2 = _fit_r2(y, y_pred)
-    r2_lsq = weibull_fit(values).r2
+    r2_lsq = weibull_fit(values, rank_method).r2
     steps = [
-        "计算过程（3 参数 Weibull，median rank 非线性最小二乘）",
+        f"计算过程（3 参数 Weibull，{rank_method_label(rank_method)} 非线性最小二乘）",
         "分布：F(σ) = 1 − exp(−((σ−γ)/σ₀)^m)，γ 为位置参数（强度下限）",
-        f"① 最小化 Σ(F̂ᵢ − F(σᵢ))²（F̂ 为 median rank），初值取 2 参数最小二乘解，γ₀ = 0",
+        f"① 最小化 Σ(F̂ᵢ − F(σᵢ))²（F̂ 为 {rank_method_label(rank_method)}），"
+        "初值取 2 参数最小二乘解，γ₀ = 0",
         f"② 带阻尼 Gauss-Newton（数值雅可比）迭代 {iters} 次"
         + ("收敛" if converged else "（未完全收敛，取当前解）"),
         f"③ 结果：m = {m:.4f}，σ₀ = {sigma0:.2f}，γ = {gamma:.4f}",
@@ -255,4 +295,5 @@ def weibull_fit_3p(strengths) -> WeibullResult:
     ]
     return WeibullResult(
         m=m, sigma0=sigma0, r2=r2, strengths_sorted=sorted_s,
-        median_ranks=f_hat_l, x=x.tolist(), y=y.tolist(), gamma=gamma, steps=steps)
+        median_ranks=f_hat_l, x=x.tolist(), y=y.tolist(), gamma=gamma, steps=steps,
+        rank_method=rank_method)

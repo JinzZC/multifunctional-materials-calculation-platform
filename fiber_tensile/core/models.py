@@ -77,11 +77,12 @@ class WeibullResult:
     sigma0: float
     r2: float
     strengths_sorted: list
-    median_ranks: list      # F̂ᵢ = (i-0.5)/N
+    median_ranks: list      # F̂ᵢ：按 rank_method 计算的累计失效概率
     x: list                 # ln(σ−γ) 或 ln(σ)
     y: list                 # ln(-ln(1-F̂))
     gamma: float = 0.0
     steps: list = field(default_factory=list)   # 计算过程（MLE/3 参数用）
+    rank_method: str = "hazen"                 # Weibull 绘图位置方法
 
 
 @dataclass

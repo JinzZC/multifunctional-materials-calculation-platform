@@ -15,7 +15,7 @@ from ..config import sanitize_filename
 from ..core.models import MODE_FILAMENT, MODE_LABELS, Batch
 from ..core.modes import get_mode_spec, strength_unit_label
 from ..core.statistics import batch_statistics
-from ..core.weibull import weibull_fit, weibull_fit_3p, weibull_fit_mle
+from ..core.weibull import RANK_METHODS, weibull_fit, weibull_fit_3p, weibull_fit_mle
 from ..data.repository import get_batch, get_strengths, list_batches
 from . import prefs
 
@@ -24,7 +24,8 @@ UNSAVED = -1   # 批次组合框「当前未保存数据」的哨兵值
 logger = logging.getLogger(__name__)
 
 
-def export_batch_report(parent: QWidget, batch: Batch, strengths: list, kind: str) -> None:
+def export_batch_report(parent: QWidget, batch: Batch, strengths: list, kind: str,
+                        fit_method: str = "lsq", rank_method: str = "hazen") -> None:
     """导出一个批次（或未保存数据）的 Excel/PDF 报告。kind: 'xlsx' | 'pdf'。"""
     import os
 
@@ -40,7 +41,12 @@ def export_batch_report(parent: QWidget, batch: Batch, strengths: list, kind: st
         QMessageBox.warning(parent, "无法导出", str(e))
         return
     try:
-        weibull = weibull_fit(strengths)
+        if fit_method == "mle":
+            weibull = weibull_fit_mle(strengths, rank_method)
+        elif fit_method == "mle3p":
+            weibull = weibull_fit_3p(strengths, rank_method)
+        else:
+            weibull = weibull_fit(strengths, rank_method)
     except ValueError:
         weibull = None
     ext = kind
@@ -110,12 +116,23 @@ class AnalysisTab(QWidget):
         wfit_row = QHBoxLayout()
         wfit_row.addWidget(QLabel("拟合方法："))
         self._combo_wfit = QComboBox()
-        self._combo_wfit.addItem("最小二乘法（GB/T 31290 标准）", "lsq")
+        self._combo_wfit.addItem("二参数线性最小二乘法", "lsq")
         self._combo_wfit.addItem("极大似然法（MLE，参数最优）", "mle")
-        self._combo_wfit.addItem("三参数威布尔（MLE）", "mle3p")
+        self._combo_wfit.addItem("三参数 Weibull（非线性最小二乘）", "mle3p")
         self._combo_wfit.currentIndexChanged.connect(self._on_wfit_changed)
         wfit_row.addWidget(self._combo_wfit, 1)
         w_layout.addLayout(wfit_row)
+        rank_row = QHBoxLayout()
+        rank_row.addWidget(QLabel("排序概率："))
+        self._combo_rank = QComboBox()
+        for key, (label, formula) in RANK_METHODS.items():
+            self._combo_rank.addItem(f"{label}　F̂ᵢ = {formula}", key)
+        saved_rank = prefs.weibull_rank_method()
+        saved_index = self._combo_rank.findData(saved_rank)
+        self._combo_rank.setCurrentIndex(saved_index if saved_index >= 0 else 0)
+        self._combo_rank.currentIndexChanged.connect(self._on_rank_changed)
+        rank_row.addWidget(self._combo_rank, 1)
+        w_layout.addLayout(rank_row)
         self._lbl_m = QLabel("Weibull 模数 m：—")
         self._lbl_sigma0 = QLabel("特征强度 σ₀：—")
         self._lbl_r2 = QLabel("拟合优度 R²：—")
@@ -240,13 +257,14 @@ class AnalysisTab(QWidget):
             strengths = [s / 1000.0 for s in strengths]   # MPa → GPa
             unit = "GPa"
         method = self._combo_wfit.currentData()
+        rank_method = self._combo_rank.currentData()
         try:
             if method == "mle":
-                w = weibull_fit_mle(strengths)
+                w = weibull_fit_mle(strengths, rank_method)
             elif method == "mle3p":
-                w = weibull_fit_3p(strengths)
+                w = weibull_fit_3p(strengths, rank_method)
             else:
-                w = weibull_fit(strengths)
+                w = weibull_fit(strengths, rank_method)
         except ValueError as e:
             self._lbl_m.setText("Weibull 模数 m：—")
             self._lbl_sigma0.setText("特征强度 σ₀：—")
@@ -283,9 +301,20 @@ class AnalysisTab(QWidget):
         unit = strength_unit_label(mode)
         self._update_weibull(mode, density, name, strengths, unit)
 
+    def _on_rank_changed(self, *args) -> None:
+        """切换排序概率后保存偏好并重算 Weibull 结果。"""
+        method = self._combo_rank.currentData()
+        if method:
+            prefs.set_weibull_rank_method(method)
+        self._on_wfit_changed()
+
     def _export(self, kind: str) -> None:
         payload = self._current_payload()
         if payload is None:
             return
         _, _, _, batch, strengths = payload
-        export_batch_report(self, batch, strengths, kind)
+        export_batch_report(
+            self, batch, strengths, kind,
+            fit_method=self._combo_wfit.currentData(),
+            rank_method=self._combo_rank.currentData(),
+        )

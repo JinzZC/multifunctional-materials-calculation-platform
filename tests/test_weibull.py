@@ -8,6 +8,7 @@ import pytest
 
 from fiber_tensile.core.weibull import (
     median_ranks,
+    plotting_positions,
     weibull_fit,
     weibull_fit_3p,
     weibull_fit_mle,
@@ -17,6 +18,44 @@ from fiber_tensile.core.weibull import (
 def test_median_ranks():
     assert median_ranks(4) == pytest.approx([0.125, 0.375, 0.625, 0.875])
     assert median_ranks(2) == pytest.approx([0.25, 0.75])
+
+
+def test_plotting_position_methods():
+    assert plotting_positions(4, "hazen") == pytest.approx([0.125, 0.375, 0.625, 0.875])
+    assert plotting_positions(4, "mean_rank") == pytest.approx([0.2, 0.4, 0.6, 0.8])
+    assert plotting_positions(4, "benard") == pytest.approx(
+        [(i - 0.3) / 4.4 for i in range(1, 5)])
+    assert plotting_positions(4, "blom") == pytest.approx(
+        [(i - 0.375) / 4.25 for i in range(1, 5)])
+    with pytest.raises(ValueError, match="未知"):
+        plotting_positions(4, "invalid")
+
+
+def test_origin_compatible_regression_from_user_dataset():
+    """用用户的 30 个原始强力锁定 Origin Mean Rank 复现结果。"""
+    strengths = [
+        7.9948261, 8.7058648, 9.5925353, 9.8672293, 10.2418341,
+        10.315311, 10.6747173, 10.9676309, 11.3073803, 11.6906174,
+        11.7233329, 11.7986359, 12.050537, 12.9041731, 13.0018219,
+        13.0114347, 13.0813301, 13.3777604, 13.3815527, 14.0973866,
+        14.3221736, 14.6102726, 15.9069508, 16.185455, 16.4450139,
+        17.3650101, 17.5802946, 17.7544311, 19.9730173, 21.6461375,
+    ]
+    origin = weibull_fit(strengths, "mean_rank")
+    existing = weibull_fit(strengths, "hazen")
+    assert origin.m == pytest.approx(4.5584510733, rel=1e-10)
+    assert existing.m == pytest.approx(5.0096934453, rel=1e-10)
+    assert origin.rank_method == "mean_rank"
+
+
+def test_rank_method_propagates_to_mle_and_3p():
+    strengths = [8.0, 9.2, 10.1, 11.5, 13.0, 15.4]
+    mle = weibull_fit_mle(strengths, "mean_rank")
+    three_p = weibull_fit_3p(strengths, "benard")
+    assert mle.rank_method == "mean_rank"
+    assert mle.median_ranks == pytest.approx(plotting_positions(6, "mean_rank"))
+    assert three_p.rank_method == "benard"
+    assert three_p.median_ranks == pytest.approx(plotting_positions(6, "benard"))
 
 
 def test_inverse_construction_roundtrip():

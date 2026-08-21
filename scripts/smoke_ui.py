@@ -109,9 +109,16 @@ def main() -> int:
     ana._combo_wfit.setCurrentIndex(2)          # 三参数威布尔
     assert ana._lbl_m.text().startswith("Weibull 模数 m = "), ana._lbl_m.text()
     ana._combo_wfit.setCurrentIndex(0)          # 恢复标准法
+    # 排序概率四种方法均可切换，且图中显示当前方法
+    assert ana._combo_rank.count() == 4
+    for rank_index in range(4):
+        ana._combo_rank.setCurrentIndex(rank_index)
+        assert ana._lbl_m.text().startswith("Weibull 模数 m = "), ana._lbl_m.text()
+    ana._combo_rank.setCurrentIndex(1)          # Origin 兼容 Mean Rank
     # Weibull 图上应包含拟合直线方程标注
     canvas_texts = [t.get_text() for ax in ana._canvas.fig.axes for t in ax.texts]
     assert any("拟合直线方程" in t and "y = " in t for t in canvas_texts), canvas_texts
+    assert any("Origin 兼容" in t for t in canvas_texts), canvas_texts
     # 图形操作工具栏按钮已中文化
     toolbar_texts = [a.text() for a in ana._toolbar.actions() if a.text()]
     assert "复位" in toolbar_texts and "保存图像" in toolbar_texts, toolbar_texts

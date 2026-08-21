@@ -11,6 +11,7 @@ import numpy as np
 from matplotlib.figure import Figure
 
 from .config import apply_matplotlib_chinese
+from .core.weibull import rank_method_label
 
 # 模块导入即配置中文字体（幂等），保证任何调用方（UI/报告导出/测试）生成的图都正确渲染中文
 apply_matplotlib_chinese()
@@ -66,9 +67,15 @@ def build_weibull_figure(series, labels=None, title="Weibull 分布拟合图",
     # 拟合直线方程标注（右下角，随系列数自动多行）
     if len(series) == 1:
         eq_lines = [f"拟合直线方程：{fit_equation_text(series[0])}"]
+        eq_lines.append(f"排序概率：{rank_method_label(series[0].rank_method)}")
     else:
         eq_lines = ["拟合直线方程"] + [
             f"{label}：{fit_equation_text(w)}" for w, label in zip(series, labels)]
+        rank_labels = {rank_method_label(w.rank_method) for w in series}
+        if len(rank_labels) == 1:
+            eq_lines.append(f"排序概率：{rank_labels.pop()}")
+        else:
+            eq_lines.append("排序概率：各批次方法不同")
     eq_lines.append(_AXIS_NOTE)
     ax.text(0.98, 0.03, "\n".join(eq_lines), transform=ax.transAxes,
             fontsize=9.5, ha="right", va="bottom",

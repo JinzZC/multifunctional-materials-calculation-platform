@@ -10,6 +10,7 @@ from datetime import datetime
 
 from ..core.models import MODE_LABELS
 from ..core.modes import get_mode_spec
+from ..core.weibull import rank_method_label
 
 _CJK = "STSong-Light"
 
@@ -105,6 +106,7 @@ def export_pdf_report(path, batch, analysis=None, weibull=None) -> None:
     story.append(_p("三、Weibull 分析结果", h2_style))
     if weibull is not None:
         kv_rows = [
+            ["排序概率方法", rank_method_label(weibull.rank_method)],
             ["Weibull 模数 m", f"{weibull.m:.4f}"],
             [f"特征强度 σ₀({unit})", f"{weibull.sigma0:.2f}"],
             ["拟合优度 R²", f"{weibull.r2:.4f}"],

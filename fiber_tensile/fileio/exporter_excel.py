@@ -5,6 +5,7 @@ openpyxl/matplotlib 均为函数内延迟导入，避免拖慢应用启动。
 
 from ..core.models import MODE_LABELS
 from ..core.modes import get_mode_spec
+from ..core.weibull import rank_method_label
 from .excel_safe import set_cell_value
 
 
@@ -116,6 +117,7 @@ def export_excel_report(path, batch, analysis=None, weibull=None) -> None:
     row += 1
     if weibull is not None:
         kv_rows = [
+            ("排序概率方法", rank_method_label(weibull.rank_method)),
             ("Weibull 模数 m", round(weibull.m, 4)),
             (f"特征强度 σ₀({unit})", round(weibull.sigma0, 2)),
             ("拟合优度 R²", round(weibull.r2, 4)),
@@ -162,7 +164,8 @@ def export_excel_report(path, batch, analysis=None, weibull=None) -> None:
     # ---- Sheet3 Weibull 分析数据 ----
     if weibull is not None:
         ws3 = wb.create_sheet("Weibull 分析数据")
-        headers3 = ["序号 i", f"σ({unit})", "F̂(median rank)", "ln σ", "ln(−ln(1/(1−F̂)))"]
+        headers3 = ["序号 i", f"σ({unit})", f"F̂({rank_method_label(weibull.rank_method)})",
+                    "ln σ", "ln(−ln(1−F̂))"]
         rows3 = []
         for i, (s_val, f_hat, x, y) in enumerate(zip(
                 weibull.strengths_sorted, weibull.median_ranks,
