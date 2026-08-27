@@ -9,19 +9,20 @@
 
 import sqlite3
 
-from PySide6.QtGui import QAction
+from PySide6.QtGui import QAction, QIcon
 from PySide6.QtWidgets import (
-    QHBoxLayout, QListWidget, QListWidgetItem, QMainWindow, QStackedWidget,
+    QDialog, QHBoxLayout, QListWidget, QListWidgetItem, QMainWindow, QStackedWidget,
     QMessageBox, QTabWidget, QVBoxLayout, QWidget,
 )
 
 from ..composites.ui import CompositesTab
-from ..config import APP_NAME, APP_VERSION, default_db_path
+from ..config import APP_NAME, APP_VERSION, asset_path, default_db_path
 from ..curve_analysis.ui import CurveAnalysisTab
 from ..excel_merger.ui import ExcelMergerTab
 from ..surface_energy.ui import SurfaceEnergyTab
 from . import prefs
 from .analysis_tab import AnalysisTab
+from .background import BackgroundSettingsDialog, BackgroundWidget
 from .entry_tab import EntryTab
 from .history_tab import HistoryTab
 
@@ -45,13 +46,15 @@ class MainWindow(QMainWindow):
         super().__init__(parent)
         self._conn = conn
         self.setWindowTitle(f"{APP_NAME} v{APP_VERSION}")
+        self.setWindowIcon(QIcon(asset_path("app_icon.png")))
         self.resize(1180, 780)
         self.setMinimumSize(940, 640)
         geometry = prefs.load_geometry()
         if geometry is not None:
             self.restoreGeometry(geometry)
 
-        central = QWidget()
+        central = BackgroundWidget()
+        self._background = central
         root = QHBoxLayout(central)
         root.setContentsMargins(8, 8, 8, 8)
         root.setSpacing(8)
@@ -128,10 +131,19 @@ class MainWindow(QMainWindow):
         act_quit.triggered.connect(self.close)
         file_menu.addAction(act_quit)
 
+        appearance_menu = self.menuBar().addMenu("界面(&V)")
+        act_background = QAction("背景设置…", self)
+        act_background.triggered.connect(self._show_background_settings)
+        appearance_menu.addAction(act_background)
+
         help_menu = self.menuBar().addMenu("帮助(&H)")
         act_about = QAction("关于(&A)", self)
         act_about.triggered.connect(self._show_about)
         help_menu.addAction(act_about)
+
+    def _show_background_settings(self) -> None:
+        if BackgroundSettingsDialog(self).exec() == QDialog.Accepted:
+            self._background.reload_background()
 
     def _show_about(self) -> None:
         from PySide6.QtWidgets import QMessageBox

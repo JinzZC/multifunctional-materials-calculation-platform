@@ -8,13 +8,18 @@
 
 import subprocess
 import sys
+import os
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+ASSETS = ROOT / "fiber_tensile" / "assets"
+ICON = ASSETS / "app_icon.ico"
 
 _COMMON = [
     "-m", "PyInstaller",
     "--noconfirm", "--clean", "--windowed",
+    "--icon", str(ICON),
+    "--add-data", f"{ASSETS}{os.pathsep}fiber_tensile/assets",
     "--hidden-import", "matplotlib.backends.backend_qtagg",
     "--exclude-module", "tkinter",
     "--exclude-module", "PySide6.QtWebEngineWidgets",

@@ -76,3 +76,42 @@ def weibull_fit_method() -> str:
 def set_weibull_fit_method(method: str) -> None:
     if method in _VALID_WEIBULL_FIT_METHODS:
         _settings().setValue("analysis/weibull_fit_method", method)
+
+
+def background_enabled() -> bool:
+    return str(_settings().value("appearance/background_enabled", "true")).lower() \
+        not in {"false", "0", "no"}
+
+
+def set_background_enabled(enabled: bool) -> None:
+    _settings().setValue("appearance/background_enabled", bool(enabled))
+
+
+def background_path() -> str:
+    """自定义背景路径；空字符串表示使用软件内置背景。"""
+    return str(_settings().value("appearance/background_path", "") or "")
+
+
+def set_background_path(path: str) -> None:
+    _settings().setValue("appearance/background_path", path or "")
+
+
+def background_opacity() -> int:
+    try:
+        return max(5, min(100, int(_settings().value("appearance/background_opacity", 55))))
+    except (TypeError, ValueError):
+        return 55
+
+
+def set_background_opacity(value: int) -> None:
+    _settings().setValue("appearance/background_opacity", max(5, min(100, int(value))))
+
+
+def background_mode() -> str:
+    mode = str(_settings().value("appearance/background_mode", "cover"))
+    return mode if mode in {"cover", "contain", "center", "tile"} else "cover"
+
+
+def set_background_mode(mode: str) -> None:
+    if mode in {"cover", "contain", "center", "tile"}:
+        _settings().setValue("appearance/background_mode", mode)

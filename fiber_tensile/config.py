@@ -4,6 +4,8 @@
 """
 
 import os
+import sys
+from pathlib import Path
 
 from .core.modes import (  # noqa: F401 — 兼容旧导入路径
     RANGE_DENSITY_GCM3,
@@ -17,6 +19,12 @@ APP_VERSION = "0.4.1"
 
 # 文件名非法字符（Windows）：报告默认文件名需清理，避免导出失败
 _INVALID_FILENAME_CHARS = set('\\/:*?"<>|')
+
+
+def asset_path(filename: str) -> str:
+    """返回源码运行或 PyInstaller 打包后的内置资源绝对路径。"""
+    root = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent.parent))
+    return str(root / "fiber_tensile" / "assets" / filename)
 
 
 def sanitize_filename(name: str, fallback: str = "报告") -> str:
