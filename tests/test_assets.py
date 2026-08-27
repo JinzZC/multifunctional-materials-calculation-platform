@@ -7,7 +7,8 @@ from scripts import build
 
 
 def test_bundled_visual_assets_exist():
-    for name in ("app_icon.png", "app_icon.ico", "default_background.png"):
+    for name in ("app_icon.png", "app_icon.ico", "default_background.png",
+                 "background_sunset.jpg", "background_sky_lake.jpg"):
         path = Path(asset_path(name))
         assert path.is_file()
         assert path.stat().st_size > 1000

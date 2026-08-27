@@ -14,6 +14,13 @@ from PySide6.QtWidgets import (
 from ..config import asset_path
 from . import prefs
 
+BUILTIN_BACKGROUNDS = (
+    ("低干扰材料科学（推荐）", "science", "default_background.png"),
+    ("霞光星海", "sunset", "background_sunset.jpg"),
+    ("云海湖畔", "sky_lake", "background_sky_lake.jpg"),
+)
+_BUILTIN_FILES = {key: filename for _, key, filename in BUILTIN_BACKGROUNDS}
+
 
 class BackgroundWidget(QWidget):
     """在普通控件后方绘制背景，不影响子控件交互。"""
@@ -24,9 +31,13 @@ class BackgroundWidget(QWidget):
         self.reload_background()
 
     def reload_background(self) -> None:
+        source = prefs.background_source()
         custom = Path(prefs.background_path()) if prefs.background_path() else None
-        selected = custom if custom is not None and custom.is_file() \
-            else Path(asset_path("default_background.png"))
+        if source == "custom" and custom is not None and custom.is_file():
+            selected = custom
+        else:
+            filename = _BUILTIN_FILES.get(source, "default_background.png")
+            selected = Path(asset_path(filename))
         self._pixmap = QPixmap(str(selected)) if prefs.background_enabled() else QPixmap()
         self.update()
 
@@ -69,13 +80,22 @@ class BackgroundSettingsDialog(QDialog):
         root.addWidget(self._enabled)
 
         form = QFormLayout()
+        self._source = QComboBox()
+        for label, key, _ in BUILTIN_BACKGROUNDS:
+            self._source.addItem(label, key)
+        self._source.addItem("自定义图片", "custom")
+        source_index = self._source.findData(prefs.background_source())
+        self._source.setCurrentIndex(max(source_index, 0))
+        self._source.currentIndexChanged.connect(self._refresh_path_label)
+        form.addRow("背景选择：", self._source)
+
         path_row = QHBoxLayout()
         self._path_label = QLabel()
         self._path_label.setWordWrap(True)
         self._refresh_path_label()
         choose = QPushButton("选择图片…")
         choose.clicked.connect(self._choose_image)
-        default = QPushButton("恢复内置背景")
+        default = QPushButton("恢复推荐背景")
         default.clicked.connect(self._use_default)
         path_row.addWidget(self._path_label, 1)
         path_row.addWidget(choose)
@@ -114,7 +134,10 @@ class BackgroundSettingsDialog(QDialog):
         root.addWidget(buttons)
 
     def _refresh_path_label(self) -> None:
-        self._path_label.setText(self._path if self._path else "内置碳纤维/材料科学背景")
+        if self._source.currentData() == "custom":
+            self._path_label.setText(self._path if self._path else "尚未选择自定义图片")
+        else:
+            self._path_label.setText("随软件内置，分享和打包后仍可使用")
 
     def _choose_image(self) -> None:
         path, _ = QFileDialog.getOpenFileName(
@@ -122,15 +145,17 @@ class BackgroundSettingsDialog(QDialog):
             "图片文件 (*.png *.jpg *.jpeg *.bmp *.webp)")
         if path:
             self._path = path
+            self._source.setCurrentIndex(self._source.findData("custom"))
             prefs.set_last_dir(str(Path(path).parent))
             self._refresh_path_label()
 
     def _use_default(self) -> None:
-        self._path = ""
+        self._source.setCurrentIndex(self._source.findData("science"))
         self._refresh_path_label()
 
     def accept(self) -> None:
         prefs.set_background_enabled(self._enabled.isChecked())
+        prefs.set_background_source(self._source.currentData())
         prefs.set_background_path(self._path)
         prefs.set_background_opacity(self._opacity.value())
         prefs.set_background_mode(self._mode.currentData())

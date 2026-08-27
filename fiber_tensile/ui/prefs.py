@@ -7,6 +7,7 @@ _APP = "FiberTensileAnalyzer"
 _VALID_UNITS = ("cN", "N", "mN")
 _VALID_WEIBULL_RANK_METHODS = ("hazen", "mean_rank", "benard", "blom")
 _VALID_WEIBULL_FIT_METHODS = ("lsq", "mle", "mle3p")
+_VALID_BACKGROUND_SOURCES = ("science", "sunset", "sky_lake", "custom")
 
 
 def _settings() -> QSettings:
@@ -94,6 +95,18 @@ def background_path() -> str:
 
 def set_background_path(path: str) -> None:
     _settings().setValue("appearance/background_path", path or "")
+
+
+def background_source() -> str:
+    """当前背景来源：三张内置背景之一或自定义图片。"""
+    default = "custom" if background_path() else "science"
+    source = str(_settings().value("appearance/background_source", default))
+    return source if source in _VALID_BACKGROUND_SOURCES else default
+
+
+def set_background_source(source: str) -> None:
+    if source in _VALID_BACKGROUND_SOURCES:
+        _settings().setValue("appearance/background_source", source)
 
 
 def background_opacity() -> int:
