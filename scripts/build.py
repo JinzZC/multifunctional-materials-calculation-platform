@@ -33,9 +33,53 @@ _COMMON = [
 ]
 
 
+def _build_environment() -> dict[str, str]:
+    """Return a clean environment for PyInstaller binary discovery.
+
+    Qt6Core intentionally uses the Windows system ICU DLLs.  If PATH contains
+    another product's unversioned ``icuuc.dll`` (for example Poppler),
+    PyInstaller may bundle that incompatible copy and Qt will fail at startup
+    with "The specified procedure could not be found".  Remove only those
+    third-party directories while keeping Windows' own system directories.
+    """
+    env = os.environ.copy()
+    windows_dir = Path(env.get("WINDIR", r"C:\Windows")).resolve()
+    system_dirs = {
+        (windows_dir / "System32").resolve(),
+        (windows_dir / "SysWOW64").resolve(),
+    }
+    kept: list[str] = []
+    removed: list[str] = []
+    for raw in env.get("PATH", "").split(os.pathsep):
+        if not raw:
+            continue
+        path = Path(raw)
+        try:
+            resolved = path.resolve()
+            has_foreign_icu = (
+                resolved not in system_dirs
+                and ((resolved / "icuuc.dll").is_file()
+                     or any(resolved.glob("icudt*.dll")))
+            )
+        except OSError:
+            has_foreign_icu = False
+        if has_foreign_icu:
+            removed.append(raw)
+        else:
+            kept.append(raw)
+    env["PATH"] = os.pathsep.join(kept)
+    if removed:
+        print("Build PATH: ignored incompatible third-party ICU directories:")
+        for path in removed:
+            print(f"  {path}")
+    return env
+
+
 def run(args: list) -> None:
     print(">> py " + " ".join(args))
-    subprocess.check_call([sys.executable, *args], cwd=str(ROOT))
+    subprocess.check_call(
+        [sys.executable, *args], cwd=str(ROOT), env=_build_environment()
+    )
 
 
 def main() -> None:

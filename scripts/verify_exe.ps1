@@ -10,15 +10,23 @@ foreach ($dir in Get-ChildItem -Path 'dist' -Directory) {
 }
 if (-not $folderExe) { Write-Output 'NO_EXE_FOUND'; exit 1 }
 Write-Output ("exe: " + $folderExe)
-$verifyDb = Join-Path $env:TEMP 'fiber_verify.db'
-Remove-Item $verifyDb -ErrorAction SilentlyContinue
+$verifyRoot = Join-Path $env:TEMP ("fiber-verify-" + [guid]::NewGuid().ToString('N'))
+New-Item -ItemType Directory -Path $verifyRoot | Out-Null
+$verifyDb = Join-Path $verifyRoot 'fiber_verify.db'
 $env:FT_DB_PATH = $verifyDb          # child process inherits this
-$p = Start-Process -FilePath $folderExe -PassThru
+$p = Start-Process -FilePath $folderExe -PassThru -WindowStyle Hidden
 Start-Sleep -Seconds 15
+$p.Refresh()
 $alive = -not $p.HasExited
 Write-Output ("process_alive: " + $alive)
+Write-Output ("window_title: " + $p.MainWindowTitle)
 if ($alive) {
     Stop-Process -Id $p.Id -Force
     Write-Output 'process_stopped'
 }
-Write-Output ("db_created: " + (Test-Path $verifyDb))
+$dbCreated = Test-Path $verifyDb
+Write-Output ("db_created: " + $dbCreated)
+Remove-Item Env:FT_DB_PATH -ErrorAction SilentlyContinue
+if (-not $alive -or -not $dbCreated -or $p.MainWindowTitle -eq 'Unhandled exception in script') {
+    exit 1
+}
