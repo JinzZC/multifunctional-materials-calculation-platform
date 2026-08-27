@@ -16,6 +16,7 @@ from PySide6.QtWidgets import (
 )
 
 from ..composites.ui import CompositesTab
+from ..batch_center.ui import BatchCenterTab
 from ..config import APP_NAME, APP_VERSION, asset_path, default_db_path
 from ..curve_analysis.ui import CurveAnalysisTab
 from ..excel_merger.ui import ExcelMergerTab
@@ -78,6 +79,9 @@ class MainWindow(QMainWindow):
         self._nav.addItem(QListWidgetItem("表格数据提取合并模块"))
         self._nav.item(3).setToolTip(
             "从多个文件夹及子文件夹提取 Excel、CSV、TXT、TSV 并按样品名排序")
+        self._nav.addItem(QListWidgetItem("统一批量计算中心"))
+        self._nav.item(4).setToolTip(
+            "批量校验、计算并保存纤维强度、接触角表面能和单丝曲线文件")
         root.addWidget(self._nav)
 
         # ---- 右侧堆叠页面 ----
@@ -111,6 +115,13 @@ class MainWindow(QMainWindow):
         # 模块四：Excel 数据批量提取与合并（不使用数据库）
         self.excel_merger_tab = ExcelMergerTab()
         self._stack.addWidget(self.excel_merger_tab)
+
+        # 模块五：跨功能域统一批量计算
+        db_row = conn.execute("PRAGMA database_list").fetchone()
+        db_path = db_row["file"] if db_row and db_row["file"] else default_db_path()
+        self.batch_center_tab = BatchCenterTab(db_path)
+        self.batch_center_tab.data_changed.connect(self._on_batch_center_changed)
+        self._stack.addWidget(self.batch_center_tab)
 
         root.addWidget(self._stack, 1)
         self.setCentralWidget(central)
@@ -162,6 +173,7 @@ class MainWindow(QMainWindow):
             "Zisman 法<br>"
             "· 复合材料基础计算模块：工程常数、体积分数与孔隙率<br>"
             "· 表格数据提取合并模块：Excel/CSV/TXT/TSV 扫描、样品排序与来源追踪<br><br>"
+            "· 统一批量计算中心：多文件校验、计算、取消、错误审计与日志导出<br><br>"
             "支持批量导入、Excel/PDF 报告导出。")
 
     def _on_data_saved(self, batch_id: int) -> None:
@@ -173,6 +185,11 @@ class MainWindow(QMainWindow):
     def _refresh_analysis_and_history(self) -> None:
         self.analysis_tab.refresh()
         self.history_tab.refresh()
+
+    def _on_batch_center_changed(self) -> None:
+        self._refresh_analysis_and_history()
+        self.surface_tab.refresh_history()
+        self.curve_tab.refresh_history()
 
     def closeEvent(self, event) -> None:
         if self.entry_tab.has_pending_data():
@@ -187,6 +204,12 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(
                 self, "暂时无法退出",
                 "表格数据提取任务尚未安全停止，请稍后再关闭软件。")
+            event.ignore()
+            return
+        if not self.batch_center_tab.shutdown():
+            QMessageBox.warning(
+                self, "暂时无法退出",
+                "批量计算任务尚未安全停止，请稍后再关闭软件。")
             event.ignore()
             return
         prefs.save_geometry(self.saveGeometry())
