@@ -33,6 +33,7 @@ from fiber_tensile.fileio.exporter_excel import export_excel_report
 from fiber_tensile.fileio.exporter_pdf import export_pdf_report
 from fiber_tensile.logging_setup import setup_logging
 from fiber_tensile.ui.main_window import MainWindow
+from fiber_tensile.ui import prefs
 
 
 def main() -> int:
@@ -46,6 +47,7 @@ def main() -> int:
     logging.getLogger("app").info("smoke 冒烟测试启动")
     assert os.path.exists(log_path), f"日志文件未创建：{log_path}"
     conn = open_database(tmp_db)
+    prefs.clear_entry_draft()
     win = MainWindow(conn)
     win.show()
 
@@ -86,9 +88,11 @@ def main() -> int:
         tab._spin_dim.setValue(d)
         tab._add_sample()
     assert tab._table.rowCount() == 5
+    assert len(prefs.entry_draft().get("samples", [])) == 5
     tab._edit_batch_name.setText("冒烟测试批次")
     tab._save()
     assert tab._table.rowCount() == 0            # 保存后表格清空
+    assert prefs.entry_draft() == {}
     batches = list_batches(conn)
     assert len(batches) == 1 and batches[0].sample_count == 5
 
@@ -152,7 +156,6 @@ def main() -> int:
     assert hist._detail_table.rowCount() == 5
 
     # 6. 界面偏好：默认单位读写、窗口几何保存
-    from fiber_tensile.ui import prefs
     prefs.set_default_force_unit("N")
     assert prefs.default_force_unit() == "N"
     prefs.save_geometry(win.saveGeometry())
@@ -250,18 +253,19 @@ def main() -> int:
     st._radio_methods["owrk"].setChecked(True)
     assert not st._figure_pane.isVisible()
 
-    # 9. 模块导航栏：三个模块可切换并记忆，模块名过长自动换行
-    assert win._nav.count() == 4
+    # 9. 模块导航栏：五个模块可切换并记忆，模块名过长自动换行
+    assert win._nav.count() == 5
     assert win._nav.item(0).text() == "纤维拉伸强度分析模块"
     assert win._nav.item(1).text() == "接触角表面能模块"
     assert win._nav.item(2).text() == "复合材料基础计算模块"
     assert win._nav.item(3).text() == "表格数据提取合并模块"
+    assert win._nav.item(4).text() == "统一批量计算中心"
     assert "多功能计算平台" in win.windowTitle()
     assert win._nav.wordWrap() is True
     # 各模块界面区块之间有可拖拽分隔条（QSplitter）
     from PySide6.QtWidgets import QSplitter
     for tab in (win.entry_tab, win.analysis_tab, win.history_tab, win.surface_tab,
-                win.composites_tab, win.excel_merger_tab):
+                win.composites_tab, win.excel_merger_tab, win.batch_center_tab):
         assert tab.findChild(QSplitter) is not None, type(tab).__name__
 
     # 9b. Excel 合并模块：扫描两个工作簿，在线程中按表头对齐并生成预览
@@ -343,7 +347,6 @@ def main() -> int:
     assert win._stack.currentIndex() == 1
     win._nav.setCurrentRow(0)
     assert win._stack.currentIndex() == 0
-    from fiber_tensile.ui import prefs
     prefs.set_last_module(1)
     assert prefs.last_module() == 1
 

@@ -501,7 +501,8 @@ class SurfaceEnergyTab(QWidget):
         if not path:
             return
         prefs.set_last_dir(os.path.dirname(path))
-        settings = {}
+        settings = {key: value for key, value in prefs.import_rule("surface").items()
+                    if key != "default_force_unit"}
         if advanced:
             dialog = ImportSettingsDialog(
                 path, "surface", list(SURFACE_IMPORT_FIELDS),

@@ -152,3 +152,25 @@ def set_import_rule(namespace: str, rule: dict) -> None:
 
 def clear_import_rule(namespace: str) -> None:
     _settings().remove(f"import_rules/{namespace}")
+
+
+def entry_draft() -> dict:
+    """读取纤维录入草稿；损坏数据安全回退为空。"""
+    raw = str(_settings().value("drafts/fiber_entry", "") or "")
+    if not raw:
+        return {}
+    try:
+        value = json.loads(raw)
+    except (TypeError, ValueError):
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
+def set_entry_draft(draft: dict) -> None:
+    _settings().setValue(
+        "drafts/fiber_entry",
+        json.dumps(draft, ensure_ascii=False, separators=(",", ":")))
+
+
+def clear_entry_draft() -> None:
+    _settings().remove("drafts/fiber_entry")

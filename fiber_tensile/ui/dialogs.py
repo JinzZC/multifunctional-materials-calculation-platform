@@ -39,7 +39,7 @@ class ImportWizardDialog(QDialog):
         prefs.set_last_dir(str(Path(path).parent))
         # 解析：自动识别优先；失败或预览阶段均可进入高级导入设置。
         mode = None
-        settings: dict = {}
+        settings: dict = prefs.import_rule("fiber")
         while True:
             try:
                 preview = parse_file(path, mode, **settings)

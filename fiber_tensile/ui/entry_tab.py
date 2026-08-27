@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 import os
 import sqlite3
+from dataclasses import asdict
 
 from PySide6.QtCore import QDate, Qt, Signal
 from PySide6.QtGui import QKeySequence, QShortcut
@@ -41,9 +42,12 @@ class EntryTab(QWidget):
         self._conn = conn
         self._pending: list[Sample] = []
         self._counter = 1                 # 自动编号
+        self._restoring_draft = False
+        self.restored_draft_count = 0
         self._build_ui()
         self._connect_signals()
         self._on_mode_changed()
+        self._restore_draft()
 
     def has_pending_data(self) -> bool:
         """当前是否存在尚未保存到数据库的样本。"""
@@ -174,6 +178,10 @@ class EntryTab(QWidget):
         self._combo_unit.currentTextChanged.connect(prefs.set_default_force_unit)
         self._spin_dim.valueChanged.connect(self._update_preview)
         self._spin_density.valueChanged.connect(self._update_preview)
+        self._edit_batch_name.textChanged.connect(self._save_draft)
+        self._edit_fiber_type.textChanged.connect(self._save_draft)
+        self._spin_density.valueChanged.connect(self._save_draft)
+        self._edit_remark.textChanged.connect(self._save_draft)
         self._btn_add.clicked.connect(self._add_sample)
         self._btn_import.clicked.connect(self._import_file)
         self._btn_template.clicked.connect(self._download_template)
@@ -271,6 +279,7 @@ class EntryTab(QWidget):
         if not self._pending:
             self._set_mode_locked(False)
         if rows:
+            self._save_draft()
             self.data_changed.emit()
 
     def _clear_table(self) -> None:
@@ -282,6 +291,7 @@ class EntryTab(QWidget):
         self._table.setRowCount(0)
         self._pending.clear()
         self._set_mode_locked(False)
+        self._save_draft()
         self.data_changed.emit()
 
     def _set_mode_locked(self, locked: bool) -> None:
@@ -313,6 +323,7 @@ class EntryTab(QWidget):
         self._pending.append(sample)
         self._counter += 1
         self._append_table_row(sample, density)
+        self._save_draft()
         self.data_changed.emit()
         self._spin_force.setFocus()    # 焦点回到强力输入，便于连续录入
 
@@ -367,6 +378,7 @@ class EntryTab(QWidget):
         self._table.setRowCount(0)
         self._pending.clear()
         self._set_mode_locked(False)
+        prefs.clear_entry_draft()
         self.saved.emit(bid)
         self.data_changed.emit()
         logger.info(f"已保存 {n} 条数据到批次「{name}」(id={bid})")
@@ -383,6 +395,57 @@ class EntryTab(QWidget):
         prefs.set_last_dir(os.path.dirname(path))
         generate_template(path)
         QMessageBox.information(self, "完成", f"模板已保存到：\n{path}")
+
+    # ---- 草稿保护 ----
+
+    def _save_draft(self, *_args) -> None:
+        if self._restoring_draft:
+            return
+        has_metadata = any((
+            self._edit_batch_name.text().strip(), self._edit_fiber_type.text().strip(),
+            self._edit_remark.text().strip(),
+        ))
+        if not self._pending and not has_metadata:
+            prefs.clear_entry_draft()
+            return
+        prefs.set_entry_draft({
+            "mode": self._mode(),
+            "batch_name": self._edit_batch_name.text(),
+            "fiber_type": self._edit_fiber_type.text(),
+            "density": self._spin_density.value(),
+            "remark": self._edit_remark.text(),
+            "counter": self._counter,
+            "samples": [asdict(sample) for sample in self._pending],
+        })
+
+    def _restore_draft(self) -> None:
+        draft = prefs.entry_draft()
+        if not draft:
+            return
+        try:
+            mode = draft.get("mode")
+            samples = [Sample(**value) for value in draft.get("samples", [])]
+            if mode not in MODES:
+                raise ValueError("草稿计算模式无效")
+            self._restoring_draft = True
+            self._radio_modes[mode].setChecked(True)
+            self._edit_batch_name.setText(str(draft.get("batch_name", "")))
+            self._edit_fiber_type.setText(str(draft.get("fiber_type", "")))
+            self._spin_density.setValue(float(draft.get("density", 0) or 0))
+            self._edit_remark.setText(str(draft.get("remark", "")))
+            self._pending = samples
+            self._counter = max(int(draft.get("counter", 1)), len(samples) + 1)
+            density = self._spin_density.value() or None
+            for sample in samples:
+                self._append_table_row(sample, density)
+            self.restored_draft_count = len(samples)
+        except (TypeError, ValueError):
+            prefs.clear_entry_draft()
+            self._pending.clear()
+            self._table.setRowCount(0)
+            self._set_mode_locked(False)
+        finally:
+            self._restoring_draft = False
 
     # ---- 供其他 Tab 使用 ----
 

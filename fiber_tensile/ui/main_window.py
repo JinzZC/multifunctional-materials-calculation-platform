@@ -7,25 +7,34 @@
 新增功能域（如 EMI）时在导航栏加一项、堆叠区加一页即可。
 """
 
+import logging
+import os
 import sqlite3
+from datetime import datetime
+from pathlib import Path
 
 from PySide6.QtGui import QAction, QIcon
 from PySide6.QtWidgets import (
-    QDialog, QHBoxLayout, QListWidget, QListWidgetItem, QMainWindow, QStackedWidget,
-    QMessageBox, QTabWidget, QVBoxLayout, QWidget,
+    QDialog, QFileDialog, QHBoxLayout, QListWidget, QListWidgetItem, QMainWindow,
+    QStackedWidget, QMessageBox, QTabWidget, QVBoxLayout, QWidget,
 )
 
 from ..composites.ui import CompositesTab
 from ..batch_center.ui import BatchCenterTab
 from ..config import APP_NAME, APP_VERSION, asset_path, default_db_path
 from ..curve_analysis.ui import CurveAnalysisTab
+from ..data.maintenance import backup_database, suggested_backup_name
 from ..excel_merger.ui import ExcelMergerTab
+from ..fileio.diagnostics import create_diagnostic_zip
 from ..surface_energy.ui import SurfaceEnergyTab
 from . import prefs
 from .analysis_tab import AnalysisTab
 from .background import BackgroundSettingsDialog, BackgroundWidget
 from .entry_tab import EntryTab
 from .history_tab import HistoryTab
+from .search_dialog import GlobalSearchDialog
+
+logger = logging.getLogger(__name__)
 
 def _nav_style(glass: bool) -> str:
     background = "rgba(247, 250, 253, 205)" if glass else "#F7FAFD"
@@ -118,8 +127,8 @@ class MainWindow(QMainWindow):
 
         # 模块五：跨功能域统一批量计算
         db_row = conn.execute("PRAGMA database_list").fetchone()
-        db_path = db_row["file"] if db_row and db_row["file"] else default_db_path()
-        self.batch_center_tab = BatchCenterTab(db_path)
+        self._db_path = db_row["file"] if db_row and db_row["file"] else default_db_path()
+        self.batch_center_tab = BatchCenterTab(self._db_path)
         self.batch_center_tab.data_changed.connect(self._on_batch_center_changed)
         self._stack.addWidget(self.batch_center_tab)
 
@@ -132,7 +141,11 @@ class MainWindow(QMainWindow):
         self._nav.setCurrentRow(saved if 0 <= saved < self._nav.count() else 0)
 
         self._build_menu()
-        self.statusBar().showMessage(f"数据库：{default_db_path()}")
+        if self.entry_tab.restored_draft_count:
+            self.statusBar().showMessage(
+                f"已恢复 {self.entry_tab.restored_draft_count} 条未保存的纤维录入草稿", 12000)
+        else:
+            self.statusBar().showMessage(f"数据库：{self._db_path}")
 
         # Tab 间联动：数据变化后刷新分析与历史
         self.entry_tab.saved.connect(self._on_data_saved)
@@ -141,6 +154,14 @@ class MainWindow(QMainWindow):
 
     def _build_menu(self) -> None:
         file_menu = self.menuBar().addMenu("文件(&F)")
+        act_backup = QAction("立即备份数据库…", self)
+        act_backup.setShortcut("Ctrl+Shift+B")
+        act_backup.triggered.connect(self._backup_database)
+        file_menu.addAction(act_backup)
+        act_diagnostics = QAction("生成诊断包…", self)
+        act_diagnostics.triggered.connect(self._create_diagnostics)
+        file_menu.addAction(act_diagnostics)
+        file_menu.addSeparator()
         act_quit = QAction("退出(&Q)", self)
         act_quit.setShortcut("Ctrl+Q")
         act_quit.triggered.connect(self.close)
@@ -151,10 +172,56 @@ class MainWindow(QMainWindow):
         act_background.triggered.connect(self._show_background_settings)
         appearance_menu.addAction(act_background)
 
+        tools_menu = self.menuBar().addMenu("工具(&T)")
+        act_search = QAction("全局搜索…", self)
+        act_search.setShortcut("Ctrl+K")
+        act_search.triggered.connect(self._show_global_search)
+        tools_menu.addAction(act_search)
+
         help_menu = self.menuBar().addMenu("帮助(&H)")
         act_about = QAction("关于(&A)", self)
         act_about.triggered.connect(self._show_about)
         help_menu.addAction(act_about)
+
+    def _backup_database(self) -> None:
+        start = prefs.last_dir() or str(Path(self._db_path).parent)
+        default = os.path.join(start, suggested_backup_name(self._db_path))
+        path, _ = QFileDialog.getSaveFileName(
+            self, "备份数据库", default, "数据库备份 (*.db);;所有文件 (*.*)")
+        if not path:
+            return
+        prefs.set_last_dir(str(Path(path).parent))
+        try:
+            output = backup_database(self._conn, path)
+        except Exception as exc:
+            logger.exception("手动备份数据库失败")
+            QMessageBox.critical(self, "备份失败", str(exc))
+            return
+        QMessageBox.information(self, "备份完成", f"数据库一致性备份已保存：\n{output}")
+
+    def _create_diagnostics(self) -> None:
+        start = prefs.last_dir() or str(Path(self._db_path).parent)
+        name = f"多功能计算平台-诊断包-{datetime.now():%Y%m%d-%H%M%S}.zip"
+        path, _ = QFileDialog.getSaveFileName(
+            self, "保存诊断包", os.path.join(start, name), "ZIP 压缩包 (*.zip)")
+        if not path:
+            return
+        prefs.set_last_dir(str(Path(path).parent))
+        log_path = Path(self._db_path).parent / "app.log"
+        try:
+            output = create_diagnostic_zip(path, self._conn, log_path)
+        except Exception as exc:
+            logger.exception("生成诊断包失败")
+            QMessageBox.critical(self, "生成失败", str(exc))
+            return
+        QMessageBox.information(
+            self, "诊断包已生成",
+            f"已保存到：\n{output}\n\n诊断包不包含数据库文件或样品原始数据。")
+
+    def _show_global_search(self) -> None:
+        dialog = GlobalSearchDialog(self._conn, self)
+        dialog.navigate_requested.connect(self._nav.setCurrentRow)
+        dialog.exec()
 
     def _show_background_settings(self) -> None:
         if BackgroundSettingsDialog(self).exec() == QDialog.Accepted:
@@ -174,7 +241,8 @@ class MainWindow(QMainWindow):
             "· 复合材料基础计算模块：工程常数、体积分数与孔隙率<br>"
             "· 表格数据提取合并模块：Excel/CSV/TXT/TSV 扫描、样品排序与来源追踪<br><br>"
             "· 统一批量计算中心：多文件校验、计算、取消、错误审计与日志导出<br><br>"
-            "支持批量导入、Excel/PDF 报告导出。")
+            "支持可配置批量导入、Excel/PDF 报告导出、每日自动备份、全局搜索、"
+            "录入草稿恢复与诊断包。")
 
     def _on_data_saved(self, batch_id: int) -> None:
         self._refresh_analysis_and_history()
@@ -195,7 +263,8 @@ class MainWindow(QMainWindow):
         if self.entry_tab.has_pending_data():
             answer = QMessageBox.question(
                 self, "存在未保存数据",
-                "纤维拉伸强度录入页仍有未保存数据，确定放弃并退出吗？",
+                "纤维拉伸强度录入页仍有未保存数据。草稿已自动保存，"
+                "下次启动会恢复，是否退出？",
                 QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
             if answer != QMessageBox.Yes:
                 event.ignore()

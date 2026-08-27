@@ -12,6 +12,7 @@ from PySide6.QtWidgets import QApplication, QMessageBox
 
 from fiber_tensile.config import APP_NAME, APP_VERSION, asset_path, default_db_path
 from fiber_tensile.data.db import open_database
+from fiber_tensile.data.maintenance import create_daily_backup
 from fiber_tensile.logging_setup import install_excepthook, setup_logging
 from fiber_tensile.ui.main_window import MainWindow
 
@@ -37,6 +38,13 @@ def main() -> int:
     logger.info(f"启动 {APP_NAME} v{APP_VERSION}（数据库：{db_path}，日志：{log_path}）")
 
     conn = open_database(db_path)
+    try:
+        backup = create_daily_backup(conn, db_path)
+        if backup is not None:
+            logger.info(f"已创建每日自动备份：{backup}")
+    except Exception:
+        # 备份失败不阻止软件启动，但必须写入日志供诊断。
+        logger.exception("每日自动备份失败")
     win = MainWindow(conn)
     win.show()
     return app.exec()

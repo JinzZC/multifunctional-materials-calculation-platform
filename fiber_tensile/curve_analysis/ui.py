@@ -204,7 +204,8 @@ class CurveAnalysisTab(QWidget):
         if not path:
             return
         prefs.set_last_dir(os.path.dirname(path))
-        settings = {}
+        settings = {key: value for key, value in prefs.import_rule("curve").items()
+                    if key != "default_force_unit"}
         if advanced:
             dialog = ImportSettingsDialog(
                 path, "curve", list(CURVE_IMPORT_FIELDS), CURVE_HEADER_ALIASES,
