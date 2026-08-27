@@ -23,11 +23,12 @@ from ..config import sanitize_filename
 from ..fileio.importer import ImportFileError
 from ..ui import prefs
 from ..ui.csv_export import save_csv_dialog
+from ..ui.import_settings import ImportSettingsDialog
 from ..ui.richtext import to_rich
 from ..ui.widgets import DateEditWithToday
 from .core import analyze_curve
 from .exporters import export_excel_report, export_pdf_report
-from .importer import parse_curve_file
+from .importer import CURVE_HEADER_ALIASES, CURVE_IMPORT_FIELDS, parse_curve_file
 from .repository import (
     create_curve_analysis, delete_curve_analysis, get_curve_analysis,
     list_curve_analyses,
@@ -102,9 +103,11 @@ class CurveAnalysisTab(QWidget):
             "导入试验机导出的位移-力两列数据\n（起始段「只伸长不增力」的平台\n"
             "将自动校正，得到准确伸长率）"))
         self._btn_import = QPushButton("导入曲线文件…")
+        self._btn_import_advanced = QPushButton("自定义映射导入…")
         self._btn_save = QPushButton("保存分析结果")
         self._btn_save.setStyleSheet("font-weight: bold;")
         btn_col.addWidget(self._btn_import)
+        btn_col.addWidget(self._btn_import_advanced)
         btn_col.addWidget(self._btn_save)
         btn_col.addStretch(1)
         top.addLayout(btn_col, 1)
@@ -175,6 +178,7 @@ class CurveAnalysisTab(QWidget):
 
     def _connect_signals(self) -> None:
         self._btn_import.clicked.connect(self._import_curve)
+        self._btn_import_advanced.clicked.connect(lambda: self._import_curve(True))
         self._btn_save.clicked.connect(self._save)
         self._btn_delete.clicked.connect(self._delete_history)
         self._btn_export_xlsx.clicked.connect(lambda: self._export_selected("xlsx"))
@@ -192,19 +196,46 @@ class CurveAnalysisTab(QWidget):
 
     # ---- 导入与分析 ----
 
-    def _import_curve(self) -> None:
+    def _import_curve(self, advanced: bool = False) -> None:
         start = prefs.last_dir()
         path, _ = QFileDialog.getOpenFileName(
             self, "选择曲线文件", start or "",
-            "数据文件 (*.csv *.txt *.xlsx *.xlsm);;所有文件 (*.*)")
+            "数据文件 (*.csv *.txt *.tsv *.xlsx *.xlsm);;所有文件 (*.*)")
         if not path:
             return
         prefs.set_last_dir(os.path.dirname(path))
-        try:
-            disp_raw, force_raw = parse_curve_file(path)
-        except (ImportFileError, ValueError) as e:
-            QMessageBox.warning(self, "导入失败", str(e))
-            return
+        settings = {}
+        if advanced:
+            dialog = ImportSettingsDialog(
+                path, "curve", list(CURVE_IMPORT_FIELDS), CURVE_HEADER_ALIASES,
+                parent=self)
+            if dialog.exec() != QDialog.Accepted:
+                return
+            settings = {key: value for key, value in dialog.settings().items()
+                        if key != "default_force_unit"}
+        while True:
+            try:
+                disp_raw, force_raw = parse_curve_file(path, **settings)
+                break
+            except ImportFileError as e:
+                box = QMessageBox(self)
+                box.setWindowTitle("导入失败")
+                box.setText(f"{e}\n\n可以调整工作表、表头行或列映射后重试。")
+                configure = box.addButton("调整导入设置…", QMessageBox.AcceptRole)
+                box.addButton("取消", QMessageBox.RejectRole)
+                box.exec()
+                if box.clickedButton() is not configure:
+                    return
+                dialog = ImportSettingsDialog(
+                    path, "curve", list(CURVE_IMPORT_FIELDS), CURVE_HEADER_ALIASES,
+                    parent=self)
+                if dialog.exec() != QDialog.Accepted:
+                    return
+                settings = {key: value for key, value in dialog.settings().items()
+                            if key != "default_force_unit"}
+            except ValueError as e:
+                QMessageBox.warning(self, "导入失败", str(e))
+                return
         self._analyze_raw(disp_raw, force_raw)
 
     def _scales(self) -> tuple:

@@ -6,7 +6,9 @@ import pytest
 from fiber_tensile.fileio.importer import parse_decimal_text
 
 from fiber_tensile.core.models import MODE_FILAMENT, MODE_TEXTILE
-from fiber_tensile.fileio.importer import ImportFileError, parse_file, read_table
+from fiber_tensile.fileio.importer import (
+    ImportFileError, list_sheet_names, parse_file, read_table,
+)
 from fiber_tensile.fileio.template import generate_template
 
 HEADERS_F = ["编号", "批次", "断裂强力", "强力单位", "直径(μm)", "备注"]
@@ -74,6 +76,71 @@ def test_txt_tab_delimited(tmp_path):
     write_csv(p, HEADERS_F, ROWS_F, sep="\t")
     preview = parse_file(p)
     assert preview.valid_rows == 3
+
+
+def test_tsv_tab_delimited(tmp_path):
+    p = tmp_path / "data.tsv"
+    write_csv(p, HEADERS_F, ROWS_F, sep="\t")
+    preview = parse_file(p)
+    assert preview.valid_rows == 3
+
+
+def test_auto_header_skips_preamble_and_preserves_source_row(tmp_path):
+    p = tmp_path / "instrument.xlsx"
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.append(["仪器导出报告"])
+    ws.append(["操作者", "张三"])
+    ws.append(HEADERS_F)
+    ws.append(["F1", "批A", "bad", "cN", 7, None])
+    wb.save(p)
+    preview = parse_file(p)
+    assert preview.header_row == 3
+    assert preview.valid_rows == 0
+    assert preview.errors[0].row_number == 4
+
+
+def test_select_excel_sheet_and_manual_header(tmp_path):
+    p = tmp_path / "sheets.xlsx"
+    wb = openpyxl.Workbook()
+    wb.active.title = "说明"
+    wb.active.append(["请勿导入"])
+    ws = wb.create_sheet("测试数据")
+    ws.append(["标题"])
+    ws.append(HEADERS_F)
+    ws.append(ROWS_F[0])
+    wb.save(p)
+    assert list_sheet_names(p) == ["说明", "测试数据"]
+    preview = parse_file(p, sheet_name="测试数据", header_row=2)
+    assert preview.valid_rows == 1
+    assert preview.header_row == 2
+    assert preview.sheet_name == "测试数据"
+
+
+def test_explicit_column_mapping_and_header_force_unit(tmp_path):
+    p = tmp_path / "custom.xlsx"
+    write_xlsx(p, ["Specimen", "Peak Load(N)", "Dia micron"],
+               [["A-1", 0.12, 7.0]])
+    preview = parse_file(
+        p, mode=MODE_FILAMENT,
+        column_mapping={
+            "sample_no": "Specimen",
+            "breaking_force": "Peak Load(N)",
+            "diameter_um": "Dia micron",
+        },
+    )
+    assert preview.valid_rows == 1
+    assert preview.samples[0].force_unit == "N"
+    assert preview.samples[0].breaking_force == 0.12
+
+
+def test_duplicate_sample_number_warns(tmp_path):
+    p = tmp_path / "duplicate.xlsx"
+    rows = [ROWS_F[0], [" f1 ", "批A", 9.0, "cN", 7.0, None]]
+    write_xlsx(p, HEADERS_F, rows)
+    preview = parse_file(p)
+    assert preview.valid_rows == 2
+    assert any("重复试样" in warning.message for warning in preview.warnings)
 
 
 def test_textile_mode_with_dates(tmp_path):

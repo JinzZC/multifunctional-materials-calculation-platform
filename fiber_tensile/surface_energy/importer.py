@@ -65,6 +65,13 @@ for _key, _spec in METHODS.items():
 
 _ALIAS_MAP = {_norm(a): key for key, aliases in _HEADER_ALIASES.items()
               for a in aliases}
+SURFACE_IMPORT_FIELDS = (
+    ("sample_name", "样品名称"), ("method", "计算方法"),
+    ("liquid_name", "液体名称 *"), ("gamma_total", "γ_L 总表面张力 *"),
+    ("gamma_d", "γ^d 色散分量"), ("gamma_p", "γ^p 极性分量"),
+    ("angle", "接触角 *"), ("remark", "备注"), ("test_date", "测试日期"),
+)
+SURFACE_HEADER_ALIASES = tuple(_ALIAS_MAP)
 
 
 def _match_headers(df) -> dict:
@@ -151,24 +158,37 @@ def _parse_method(raw, row_number, errors):
     return key
 
 
-def parse_measurement_file(path) -> ImportPreview:
+def parse_measurement_file(path, *, sheet_name=0,
+                           header_row: int | str | None = "auto",
+                           column_mapping: dict[str, str] | None = None) -> ImportPreview:
     """解析表面能数据文件；文件级错误（格式/表头）抛 ImportFileError。"""
-    df = read_table(Path(path))
+    df = read_table(Path(path), sheet_name=sheet_name, header_row=header_row,
+                    header_aliases=_ALIAS_MAP)
     if df.shape[0] == 0:
         raise ImportFileError("文件没有数据行")
     mapping = _match_headers(df)
+    if column_mapping:
+        unknown = set(column_mapping) - set(_HEADER_ALIASES)
+        if unknown:
+            raise ImportFileError(f"列映射包含未知字段：{sorted(unknown)}")
+        for key, source in column_mapping.items():
+            if source and source not in df.columns:
+                raise ImportFileError(f"列映射字段不存在：{source!r}")
+            if source:
+                mapping[key] = source
     for required in ("liquid_name", "gamma_total", "angle"):
         if required not in mapping:
             raise ImportFileError(
                 f"缺少必填列「{required}」（液体名称、γ_L、接触角为必填）")
 
     preview = ImportPreview()
+    source_header_row = int(df.attrs.get("header_row", 1))
     sample_names: list[str] = []
     sample_name_seen: set[str] = set()
     methods: set = set()
     remark = test_date = None
     for idx, row in df.iterrows():
-        row_number = idx + 2
+        row_number = source_header_row + idx + 1
         errors: list = []
         warnings: list = []
 

@@ -56,6 +56,27 @@ def test_parse_csv_gbk(tmp_path):
     assert preview.errors == []
 
 
+def test_parse_custom_sheet_preamble_and_mapping(tmp_path):
+    p = tmp_path / "se-custom.xlsx"
+    wb = openpyxl.Workbook()
+    wb.active.title = "说明"
+    ws = wb.create_sheet("接触角结果")
+    ws.append(["测试报告"])
+    ws.append(["Liquid X", "Tension X", "Angle X"])
+    ws.append(["水", 72.8, 80.0])
+    ws.append(["二碘甲烷", 50.8, 45.0])
+    wb.save(p)
+    preview = parse_measurement_file(
+        p, sheet_name="接触角结果", header_row=2,
+        column_mapping={
+            "liquid_name": "Liquid X",
+            "gamma_total": "Tension X",
+            "angle": "Angle X",
+        })
+    assert len(preview.points) == 2
+    assert preview.points[0].angle_deg == 80.0
+
+
 def test_parse_error_rows(tmp_path):
     p = tmp_path / "bad.xlsx"
     write_xlsx(p, HEADERS, [

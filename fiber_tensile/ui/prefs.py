@@ -1,4 +1,6 @@
-"""界面偏好持久化（QSettings）：窗口几何、上次目录、默认强力单位。"""
+"""界面偏好持久化（QSettings）：窗口几何、目录、导入规则与外观。"""
+
+import json
 
 from PySide6.QtCore import QSettings
 
@@ -128,3 +130,25 @@ def background_mode() -> str:
 def set_background_mode(mode: str) -> None:
     if mode in {"cover", "contain", "center", "tile"}:
         _settings().setValue("appearance/background_mode", mode)
+
+
+def import_rule(namespace: str) -> dict:
+    """读取命名导入规则；损坏或旧格式设置安全回退为空。"""
+    raw = str(_settings().value(f"import_rules/{namespace}", "") or "")
+    if not raw:
+        return {}
+    try:
+        value = json.loads(raw)
+    except (TypeError, ValueError):
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
+def set_import_rule(namespace: str, rule: dict) -> None:
+    _settings().setValue(
+        f"import_rules/{namespace}",
+        json.dumps(rule, ensure_ascii=False, separators=(",", ":")))
+
+
+def clear_import_rule(namespace: str) -> None:
+    _settings().remove(f"import_rules/{namespace}")

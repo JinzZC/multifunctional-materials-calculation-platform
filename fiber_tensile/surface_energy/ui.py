@@ -29,10 +29,13 @@ from ..config import sanitize_filename
 from ..fileio.importer import ImportFileError, parse_decimal_text
 from ..ui import prefs
 from ..ui.csv_export import save_csv_dialog
+from ..ui.import_settings import ImportSettingsDialog
 from ..ui.widgets import DateEditWithToday
 from .core import METHOD_LABELS, METHODS, get_method_spec, LiquidPoint
 from .exporters import export_excel_report, export_pdf_report
-from .importer import parse_measurement_file
+from .importer import (
+    SURFACE_HEADER_ALIASES, SURFACE_IMPORT_FIELDS, parse_measurement_file,
+)
 from .repository import (
     add_liquid, create_measurement, delete_measurement, get_measurement,
     list_liquids, list_measurements,
@@ -130,9 +133,11 @@ class SurfaceEnergyTab(QWidget):
         self._btn_save.setStyleSheet("font-weight: bold;")
         self._btn_save.setToolTip("计算并保存（Ctrl+S）")
         self._btn_import = QPushButton("批量导入…")
+        self._btn_import_advanced = QPushButton("自定义映射导入…")
         self._btn_add_liquid = QPushButton("添加自定义液体…")
         self._btn_clear = QPushButton("清空表格")
-        for b in (self._btn_save, self._btn_import, self._btn_add_liquid, self._btn_clear):
+        for b in (self._btn_save, self._btn_import, self._btn_import_advanced,
+                  self._btn_add_liquid, self._btn_clear):
             btn_row.addWidget(b)
         btn_row.addStretch(1)
         root.addLayout(btn_row)
@@ -279,6 +284,7 @@ class SurfaceEnergyTab(QWidget):
         self._btn_clear.clicked.connect(self._clear_table)
         self._btn_save.clicked.connect(self._save)
         self._btn_import.clicked.connect(self._import_file)
+        self._btn_import_advanced.clicked.connect(lambda: self._import_file(True))
         self._btn_add_liquid.clicked.connect(self._add_custom_liquid)
         self._btn_delete_hist.clicked.connect(self._delete_history)
         self._btn_export_xlsx.clicked.connect(lambda: self._export_selected("xlsx"))
@@ -487,19 +493,43 @@ class SurfaceEnergyTab(QWidget):
 
     # ---- 导入 / 液体库 / 历史 ----
 
-    def _import_file(self) -> None:
+    def _import_file(self, advanced: bool = False) -> None:
         start = prefs.last_dir()
         path, _ = QFileDialog.getOpenFileName(
             self, "选择数据文件", start or "",
-            "数据文件 (*.xlsx *.xlsm *.csv *.txt);;所有文件 (*.*)")
+            "数据文件 (*.xlsx *.xlsm *.csv *.txt *.tsv);;所有文件 (*.*)")
         if not path:
             return
         prefs.set_last_dir(os.path.dirname(path))
-        try:
-            preview = parse_measurement_file(path)
-        except ImportFileError as e:
-            QMessageBox.critical(self, "导入失败", str(e))
-            return
+        settings = {}
+        if advanced:
+            dialog = ImportSettingsDialog(
+                path, "surface", list(SURFACE_IMPORT_FIELDS),
+                SURFACE_HEADER_ALIASES, parent=self)
+            if dialog.exec() != QDialog.Accepted:
+                return
+            settings = {key: value for key, value in dialog.settings().items()
+                        if key != "default_force_unit"}
+        while True:
+            try:
+                preview = parse_measurement_file(path, **settings)
+                break
+            except ImportFileError as e:
+                box = QMessageBox(self)
+                box.setWindowTitle("导入失败")
+                box.setText(f"{e}\n\n可以调整工作表、表头行或列映射后重试。")
+                configure = box.addButton("调整导入设置…", QMessageBox.AcceptRole)
+                box.addButton("取消", QMessageBox.RejectRole)
+                box.exec()
+                if box.clickedButton() is not configure:
+                    return
+                dialog = ImportSettingsDialog(
+                    path, "surface", list(SURFACE_IMPORT_FIELDS),
+                    SURFACE_HEADER_ALIASES, parent=self)
+                if dialog.exec() != QDialog.Accepted:
+                    return
+                settings = {key: value for key, value in dialog.settings().items()
+                            if key != "default_force_unit"}
         if preview.errors:
             lines = "\n".join(f"第 {e.row_number} 行：{e.message}" for e in preview.errors)
             QMessageBox.warning(self, "部分数据有误", f"以下行未导入：\n{lines}")

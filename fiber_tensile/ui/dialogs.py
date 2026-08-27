@@ -13,8 +13,11 @@ from PySide6.QtWidgets import (
 from ..core.models import MODE_LABELS, RowError, strength_unit_label
 from ..core.modes import MODES
 from ..data.repository import list_batches
-from ..fileio.importer import ImportFileError, parse_file
+from ..fileio.importer import (
+    FIBER_HEADER_ALIASES, FIBER_IMPORT_FIELDS, ImportFileError, parse_file,
+)
 from . import prefs
+from .import_settings import ImportSettingsDialog
 
 _PREVIEW_LIMIT = 20
 
@@ -30,16 +33,16 @@ class ImportWizardDialog(QDialog):
     def run(conn: sqlite3.Connection, parent: QWidget | None = None):
         path, _ = QFileDialog.getOpenFileName(
             parent, "选择导入文件", prefs.last_dir() or "",
-            "数据文件 (*.xlsx *.xlsm *.csv *.txt);;所有文件 (*.*)")
+            "数据文件 (*.xlsx *.xlsm *.csv *.txt *.tsv);;所有文件 (*.*)")
         if not path:
             return None
         prefs.set_last_dir(str(Path(path).parent))
-        # 解析：模式歧义（文件同时含多个模式的维度列）时请用户指定
+        # 解析：自动识别优先；失败或预览阶段均可进入高级导入设置。
         mode = None
+        settings: dict = {}
         while True:
             try:
-                preview = parse_file(path, mode)
-                break
+                preview = parse_file(path, mode, **settings)
             except ImportFileError as e:
                 if mode is None and "同时包含" in str(e):
                     box = QMessageBox(parent)
@@ -60,25 +63,50 @@ class ImportWizardDialog(QDialog):
                     else:
                         return None
                     continue
-                QMessageBox.critical(parent, "导入失败", str(e))
+                box = QMessageBox(parent)
+                box.setWindowTitle("自动导入未成功")
+                box.setText(f"{e}\n\n可以调整工作表、表头行或列映射后重试。")
+                configure = box.addButton("调整导入设置…", QMessageBox.AcceptRole)
+                box.addButton("取消", QMessageBox.RejectRole)
+                box.exec()
+                if box.clickedButton() is not configure:
+                    return None
+                configured = ImportWizardDialog._configure(path, parent)
+                if configured is None:
+                    return None
+                settings = configured
+                continue
+            # 文件含多种密度时提醒（密度参与纺织模式的 MPa 换算）
+            densities = {s.density_gcm3 for s in preview.samples
+                         if s.density_gcm3 is not None}
+            if len(densities) > 1:
+                preview.warnings.append(RowError(
+                    1, f"文件含多种密度，批次密度将取 {min(densities):g}，请确认",
+                    "density_gcm3"))
+            dlg = ImportWizardDialog(conn, preview, Path(path).name, parent)
+            result = dlg.exec()
+            if dlg._reconfigure:
+                configured = ImportWizardDialog._configure(path, parent)
+                if configured is not None:
+                    settings = configured
+                continue
+            if result != QDialog.Accepted:
                 return None
-        # 文件含多种密度时提醒（密度参与纺织模式的 MPa 换算）
-        densities = {s.density_gcm3 for s in preview.samples
-                     if s.density_gcm3 is not None}
-        if len(densities) > 1:
-            preview.warnings.append(RowError(
-                1, f"文件含多种密度，批次密度将取 {min(densities):g}，请确认",
-                "density_gcm3"))
-        dlg = ImportWizardDialog(conn, preview, Path(path).name, parent)
-        if dlg.exec() != QDialog.Accepted:
-            return None
-        return dlg.result_payload()
+            return dlg.result_payload()
+
+    @staticmethod
+    def _configure(path, parent):
+        dlg = ImportSettingsDialog(
+            path, "fiber", list(FIBER_IMPORT_FIELDS), FIBER_HEADER_ALIASES,
+            show_force_unit=True, parent=parent)
+        return dlg.settings() if dlg.exec() == QDialog.Accepted else None
 
     def __init__(self, conn: sqlite3.Connection, preview, filename: str,
                  parent: QWidget | None = None):
         super().__init__(parent)
         self._conn = conn
         self._preview = preview
+        self._reconfigure = False
         self.setWindowTitle("导入预览")
         self.resize(720, 560)
         self._batches = list_batches(conn, mode=preview.inferred_mode)  # 仅同模式可追加
@@ -91,7 +119,8 @@ class ImportWizardDialog(QDialog):
         p = self._preview
         layout.addWidget(QLabel(
             f"文件：{filename}　　模式：{MODE_LABELS[p.inferred_mode]}　　"
-            f"共 {p.total_rows} 行数据，有效 {p.valid_rows} 行，错误 {len(p.errors)} 行"))
+            f"表头：第 {p.header_row} 行　　共 {p.total_rows} 行数据，"
+            f"有效 {p.valid_rows} 行，错误 {len(p.errors)} 行"))
         layout.addWidget(QLabel(f"警告 {len(p.warnings)} 条（非阻断，详见下方列表）"))
 
         # 目标批次
@@ -127,12 +156,19 @@ class ImportWizardDialog(QDialog):
 
         # 按钮
         buttons = QDialogButtonBox()
+        settings_button = buttons.addButton("工作表/表头/列映射…",
+                                            QDialogButtonBox.ActionRole)
         self._btn_ok = buttons.addButton("仅导入有效行", QDialogButtonBox.AcceptRole)
         buttons.addButton(QDialogButtonBox.Cancel)
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
+        settings_button.clicked.connect(self._request_reconfigure)
         self._btn_ok.setEnabled(p.valid_rows > 0)
         layout.addWidget(buttons)
+
+    def _request_reconfigure(self) -> None:
+        self._reconfigure = True
+        self.reject()
 
     def _build_preview_table(self, p) -> QTableWidget:
         from ..core.modes import get_mode_spec

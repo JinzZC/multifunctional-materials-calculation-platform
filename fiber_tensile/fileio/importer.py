@@ -25,7 +25,9 @@ from ..core.units import force_to_cn
 _COLUMN_SPECS = [
     ("编号", {"编号", "样品编号", "样本号", "序号", "no", "sample_no", "id"}, "sample_no"),
     ("批次", {"批次", "批次号", "批次名称", "batch", "batch_name"}, "batch"),
-    ("断裂强力", {"断裂强力", "强力", "断裂强力(n)", "断裂强力(cn)", "force", "f"}, "breaking_force"),
+    ("断裂强力", {"断裂强力", "强力", "断裂强力(n)", "断裂强力(cn)",
+                  "断裂强力(mn)", "force", "force(n)", "force(cn)",
+                  "force(mn)", "load", "load(n)", "f"}, "breaking_force"),
     ("强力单位", {"强力单位", "单位", "unit"}, "force_unit"),
     ("直径(μm)", {"直径(μm)", "直径(um)", "直径", "diameter", "d"}, "diameter_um"),
     ("线密度(dtex)", {"线密度(dtex)", "线密度", "titer", "tt", "dtex"}, "linear_density_dtex"),
@@ -52,6 +54,9 @@ class ImportPreview:
     valid_rows: int = 0
     batch_from_file: str | None = None              # 文件"批次"列唯一值时预填批次名
     inferred_mode: str | None = None
+    header_row: int = 1                            # 实际表头行（1-based）
+    sheet_name: str | None = None
+    column_mapping: dict = field(default_factory=dict)
 
 
 def _normalize(text: str) -> str:
@@ -61,6 +66,8 @@ def _normalize(text: str) -> str:
 
 _ALIAS_MAP = {_normalize(a): key for _, aliases, key in _COLUMN_SPECS for a in aliases}
 _CANONICAL_NAMES = {key: name for name, _, key in _COLUMN_SPECS}
+FIBER_IMPORT_FIELDS = tuple((key, _CANONICAL_NAMES[key]) for key in _CANONICAL_NAMES)
+FIBER_HEADER_ALIASES = tuple(_ALIAS_MAP)
 
 
 def _match_headers(df: pd.DataFrame) -> dict:
@@ -170,8 +177,65 @@ def _warn_out_of_range(value: float, column: str, row_number: int,
             row_number, f"{column}超出常见范围 [{lo:g}, {hi:g}]，请确认数值无误", column, value))
 
 
-def read_table(path) -> "pd.DataFrame":
-    """读取表格文件为 DataFrame（所有列保持原始 object 类型）。"""
+def list_sheet_names(path) -> list[str]:
+    """返回 Excel 工作表名称；文本文件返回空列表。"""
+    import pandas as pd
+
+    p = Path(path)
+    if p.suffix.lower() not in (".xlsx", ".xlsm"):
+        return []
+    try:
+        with pd.ExcelFile(p) as workbook:
+            return list(workbook.sheet_names)
+    except Exception as exc:
+        raise ImportFileError(f"无法读取 Excel 工作表：{exc}") from exc
+
+
+def _unique_headers(values) -> list[str]:
+    """把空表头和重复表头转换为稳定、唯一的字符串名称。"""
+    headers: list[str] = []
+    counts: dict[str, int] = {}
+    for index, raw in enumerate(values, 1):
+        base = str(raw).strip() if not _is_blank(raw) else f"未命名列{index}"
+        counts[base] = counts.get(base, 0) + 1
+        headers.append(base if counts[base] == 1 else f"{base}_{counts[base]}")
+    return headers
+
+
+def detect_header_row(raw_df, header_aliases=None, max_scan_rows: int = 30) -> int:
+    """在原始表格中检测表头，返回 0-based 行号。
+
+    优先匹配调用模块提供的表头别名；无别名时按文本单元格数量与数据行结构评分。
+    """
+    aliases = {_normalize(str(value)) for value in (header_aliases or ())}
+    best_row = 0
+    best_score = float("-inf")
+    limit = min(len(raw_df), max_scan_rows)
+    for row_index in range(limit):
+        values = [value for value in raw_df.iloc[row_index].tolist() if not _is_blank(value)]
+        if not values:
+            continue
+        normalized = [_normalize(str(value)) for value in values]
+        alias_hits = sum(value in aliases for value in normalized)
+        text_count = sum(isinstance(value, str) for value in values)
+        unique_count = len(set(normalized))
+        # 别名命中权重最高；文本多、名称不重复的行更像表头。越靠前略优先。
+        score = alias_hits * 100 + text_count * 3 + unique_count - row_index * 0.01
+        if aliases and alias_hits == 0:
+            score -= 20
+        if score > best_score:
+            best_score = score
+            best_row = row_index
+    return best_row
+
+
+def read_table(path, *, sheet_name=0, header_row: int | str | None = "auto",
+               header_aliases=None) -> "pd.DataFrame":
+    """读取表格并返回 DataFrame。
+
+    ``header_row`` 为 1-based 行号，``"auto"`` 自动扫描前 30 行；所有列保持
+    原始 object 类型。Excel 可用 ``sheet_name`` 指定工作表名称或索引。
+    """
     import pandas as pd   # 延迟导入：pandas 只在导入文件时加载，加快应用启动
 
     p = Path(path)
@@ -179,25 +243,62 @@ def read_table(path) -> "pd.DataFrame":
         raise ImportFileError(f"文件不存在：{path}")
     suffix = p.suffix.lower()
     if suffix in (".xlsx", ".xlsm"):
-        return pd.read_excel(p, dtype=object)
-    if suffix == ".xls":
+        try:
+            raw = pd.read_excel(p, sheet_name=sheet_name, header=None, dtype=object)
+        except ValueError as exc:
+            raise ImportFileError(f"找不到指定工作表：{sheet_name!r}") from exc
+    elif suffix == ".xls":
         raise ImportFileError("暂不支持 .xls 旧格式，请在 Excel 中另存为 .xlsx 后再导入")
-    if suffix in (".csv", ".txt"):
+    elif suffix in (".csv", ".txt", ".tsv"):
         data = p.read_bytes()
         for enc in ("utf-8-sig", "gb18030"):
             try:
-                if suffix == ".csv":
-                    return pd.read_csv(BytesIO(data), encoding=enc, dtype=object)
-                # txt：由分隔符嗅探器处理制表符/逗号/空格
-                return pd.read_csv(BytesIO(data), encoding=enc, dtype=object,
-                                   sep=None, engine="python")
+                sep = "," if suffix == ".csv" else "\t" if suffix == ".tsv" else None
+                raw = pd.read_csv(
+                    BytesIO(data), encoding=enc, dtype=object, header=None,
+                    sep=sep, engine="python" if sep is None else "c")
+                break
             except UnicodeDecodeError:
                 continue
-        raise ImportFileError("无法识别文件编码（尝试了 UTF-8 与 GB18030）")
-    raise ImportFileError(f"不支持的文件格式：{suffix}（支持 .xlsx/.xlsm/.csv/.txt）")
+        else:
+            raise ImportFileError("无法识别文件编码（尝试了 UTF-8 与 GB18030）")
+    else:
+        raise ImportFileError(
+            f"不支持的文件格式：{suffix}（支持 .xlsx/.xlsm/.csv/.txt/.tsv）")
+
+    if raw.shape[0] == 0:
+        return raw
+    if header_row == "auto" or header_row is None:
+        header_index = detect_header_row(raw, header_aliases)
+    else:
+        try:
+            header_index = int(header_row) - 1
+        except (TypeError, ValueError):
+            raise ImportFileError("表头行必须是正整数或“自动识别”") from None
+        if header_index < 0 or header_index >= len(raw):
+            raise ImportFileError(f"表头行 {header_row} 超出文件范围")
+    frame = raw.iloc[header_index + 1:].copy()
+    frame.columns = _unique_headers(raw.iloc[header_index].tolist())
+    frame.attrs["header_row"] = header_index + 1
+    frame.attrs["sheet_name"] = str(sheet_name) if isinstance(sheet_name, str) else None
+    return frame.reset_index(drop=True)
 
 
-def parse_file(path, mode: str | None = None) -> ImportPreview:
+def _force_unit_from_header(header) -> str | None:
+    text = _normalize(str(header))
+    if "(mn)" in text or "毫牛" in text:
+        return "mN"
+    if "(cn)" in text or "厘牛" in text:
+        return "cN"
+    if "(n)" in text or text.endswith("力n"):
+        return "N"
+    return None
+
+
+def parse_file(path, mode: str | None = None, *, sheet_name=0,
+               header_row: int | str | None = "auto",
+               column_mapping: dict[str, str] | None = None,
+               default_force_unit: str | None = None) -> ImportPreview:
     """解析导入文件并逐行校验。
 
     mode 可选 'filament'/'textile'；缺省时按文件列自动推断：
@@ -205,11 +306,22 @@ def parse_file(path, mode: str | None = None) -> ImportPreview:
     """
     if mode is not None and mode not in VALID_MODES:
         raise ImportFileError(f"未知模式：{mode!r}")
-    df = read_table(path)
+    df = read_table(path, sheet_name=sheet_name, header_row=header_row,
+                    header_aliases=_ALIAS_MAP)
     if df.shape[0] == 0:
         raise ImportFileError("文件没有数据行")
 
     mapping = _match_headers(df)
+    if column_mapping:
+        valid_keys = set(_CANONICAL_NAMES)
+        unknown = set(column_mapping) - valid_keys
+        if unknown:
+            raise ImportFileError(f"列映射包含未知字段：{sorted(unknown)}")
+        for key, source in column_mapping.items():
+            if source and source not in df.columns:
+                raise ImportFileError(f"列映射字段不存在：{source!r}")
+            if source:
+                mapping[key] = source
     if "breaking_force" not in mapping:
         raise ImportFileError("缺少必填列「断裂强力」")
 
@@ -234,11 +346,19 @@ def parse_file(path, mode: str | None = None) -> ImportPreview:
                 f"{spec.label}需要「{spec.dim_label}」列"
                 f"（若文件为其他维度数据请改选对应模式）")
 
-    preview = ImportPreview(inferred_mode=mode, total_rows=len(df))
+    force_unit_hint = default_force_unit or _force_unit_from_header(
+        mapping.get("breaking_force", "")) or "cN"
+    if force_unit_hint not in VALID_FORCE_UNITS:
+        raise ImportFileError("默认强力单位仅支持 cN/N/mN")
+    preview = ImportPreview(
+        inferred_mode=mode, total_rows=len(df),
+        header_row=int(df.attrs.get("header_row", 1)),
+        sheet_name=df.attrs.get("sheet_name"), column_mapping=dict(mapping))
     batch_values: set[str] = set()
+    sample_numbers: dict[str, int] = {}
 
     for idx, row in df.iterrows():
-        row_number = idx + 2          # 第 1 行为表头
+        row_number = preview.header_row + idx + 1
         errors: list = []
         warnings: list = []
         if all(_is_blank(v) for v in row.values):
@@ -247,7 +367,8 @@ def parse_file(path, mode: str | None = None) -> ImportPreview:
         sample_no = _parse_text(row[mapping["sample_no"]]) if "sample_no" in mapping else None
         force = _parse_number(row[mapping["breaking_force"]], "断裂强力", row_number, errors)
         unit = _parse_force_unit(
-            row[mapping["force_unit"]] if "force_unit" in mapping else None, row_number, errors)
+            row[mapping["force_unit"]] if "force_unit" in mapping else force_unit_hint,
+            row_number, errors)
 
         density = test_date = None
         dim = _parse_number(row[mapping[spec.dim_field]], spec.dim_label,
@@ -274,6 +395,16 @@ def parse_file(path, mode: str | None = None) -> ImportPreview:
             batch_text = _parse_text(row[mapping["batch"]])
             if batch_text:
                 batch_values.add(batch_text)
+
+        if sample_no:
+            normalized_no = _normalize(sample_no)
+            if normalized_no in sample_numbers:
+                warnings.append(RowError(
+                    row_number,
+                    f"编号与第 {sample_numbers[normalized_no]} 行重复，请确认是否为重复试样",
+                    "sample_no", sample_no))
+            else:
+                sample_numbers[normalized_no] = row_number
 
         if force is not None and unit in VALID_FORCE_UNITS:
             _warn_out_of_range(force_to_cn(force, unit), "断裂强力(cN)", row_number,
