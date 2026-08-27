@@ -4,6 +4,7 @@
 任何写入后调用 recalculate_batch() 统一重算，保证查询时直接读缓存即可。
 """
 
+import math
 import sqlite3
 from typing import Sequence
 
@@ -18,6 +19,54 @@ _UPDATABLE_FIELDS = ("batch_name", "fiber_type", "density", "remark")
 def _validate_mode(mode: str) -> None:
     if mode not in VALID_MODES:
         raise ValueError(f"未知模式：{mode!r}（仅支持 {VALID_MODES}）")
+
+
+def _validate_density(density: float | None) -> None:
+    if density is not None and (not math.isfinite(density) or density <= 0):
+        raise ValueError(f"密度必须为正的有限值，实际值：{density!r}")
+
+
+def _validate_batch(batch: Batch) -> str:
+    _validate_mode(batch.mode)
+    _validate_density(batch.density)
+    name = (batch.batch_name or "").strip()
+    if not name:
+        raise ValueError("批次名称不能为空")
+    return name
+
+
+def _insert_batch(conn: sqlite3.Connection, batch: Batch) -> int:
+    name = _validate_batch(batch)
+    cur = conn.execute(
+        "INSERT INTO batches (batch_name, fiber_type, mode, density, remark) VALUES (?,?,?,?,?)",
+        (name, batch.fiber_type, batch.mode, batch.density, batch.remark),
+    )
+    return int(cur.lastrowid)
+
+
+def _sample_rows(batch_id: int, batch: Batch, samples: Sequence[Sample]) -> list[tuple]:
+    rows = []
+    for i, s in enumerate(samples):
+        if s.force_unit not in VALID_FORCE_UNITS:
+            raise ValueError(f"第 {i + 1} 条数据的强力单位无效：{s.force_unit!r}")
+        force_cn = force_to_cn(s.breaking_force, s.force_unit)
+        strength, strength_mpa = compute_strength(
+            batch.mode, force_cn, s.diameter_um, s.linear_density_dtex, batch.density)
+        rows.append((
+            batch_id, s.sample_no, s.breaking_force, s.force_unit,
+            s.diameter_um, s.linear_density_dtex,
+            strength, strength_mpa, s.remark, s.test_date,
+        ))
+    return rows
+
+
+def _insert_sample_rows(conn: sqlite3.Connection, rows: list[tuple]) -> None:
+    conn.executemany(
+        "INSERT INTO samples (batch_id, sample_no, breaking_force, force_unit, "
+        "diameter_um, linear_density_dtex, strength, strength_mpa, remark, test_date) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?)",
+        rows,
+    )
 
 
 def _sample_from_row(row: sqlite3.Row) -> Sample:
@@ -51,16 +100,20 @@ def _batch_from_row(row: sqlite3.Row, sample_count: int = 0) -> Batch:
 
 def create_batch(conn: sqlite3.Connection, batch: Batch) -> int:
     """新建批次，返回批次 id。"""
-    _validate_mode(batch.mode)
-    name = (batch.batch_name or "").strip()
-    if not name:
-        raise ValueError("批次名称不能为空")
-    cur = conn.execute(
-        "INSERT INTO batches (batch_name, fiber_type, mode, density, remark) VALUES (?,?,?,?,?)",
-        (name, batch.fiber_type, batch.mode, batch.density, batch.remark),
-    )
-    conn.commit()
-    return cur.lastrowid
+    with conn:
+        return _insert_batch(conn, batch)
+
+
+def create_batch_with_samples(conn: sqlite3.Connection, batch: Batch,
+                              samples: Sequence[Sample]) -> tuple[int, int]:
+    """原子新建批次并写入样本；任一校验或写入失败时全部回滚。"""
+    if not samples:
+        raise ValueError("批次至少需要一条样本数据")
+    with conn:
+        batch_id = _insert_batch(conn, batch)
+        rows = _sample_rows(batch_id, batch, samples)
+        _insert_sample_rows(conn, rows)
+    return batch_id, len(rows)
 
 
 def update_batch(conn: sqlite3.Connection, batch_id: int, **fields) -> None:
@@ -72,14 +125,16 @@ def update_batch(conn: sqlite3.Connection, batch_id: int, **fields) -> None:
         return
     if "batch_name" in fields and not (fields["batch_name"] or "").strip():
         raise ValueError("批次名称不能为空")
+    if "density" in fields:
+        _validate_density(fields["density"])
     get_batch_meta(conn, batch_id)  # 确保批次存在
     assignments = ", ".join(f"{k} = ?" for k in fields)
-    conn.execute(
-        f"UPDATE batches SET {assignments} WHERE id = ?",
-        (*fields.values(), batch_id),
-    )
-    conn.commit()
-    recalculate_batch(conn, batch_id)
+    with conn:
+        conn.execute(
+            f"UPDATE batches SET {assignments} WHERE id = ?",
+            (*fields.values(), batch_id),
+        )
+        _recalculate_batch(conn, batch_id)
 
 
 def delete_batch(conn: sqlite3.Connection, batch_id: int) -> None:
@@ -93,30 +148,20 @@ def add_samples(conn: sqlite3.Connection, batch_id: int, samples: Sequence[Sampl
     batch = get_batch_meta(conn, batch_id)
     if not samples:
         return 0
-    rows = []
-    for i, s in enumerate(samples):
-        if s.force_unit not in VALID_FORCE_UNITS:
-            raise ValueError(f"第 {i + 1} 条数据的强力单位无效：{s.force_unit!r}")
-        force_cn = force_to_cn(s.breaking_force, s.force_unit)
-        strength, strength_mpa = compute_strength(
-            batch.mode, force_cn, s.diameter_um, s.linear_density_dtex, batch.density)
-        rows.append((
-            batch_id, s.sample_no, s.breaking_force, s.force_unit,
-            s.diameter_um, s.linear_density_dtex,
-            strength, strength_mpa, s.remark, s.test_date,
-        ))
-    conn.executemany(
-        "INSERT INTO samples (batch_id, sample_no, breaking_force, force_unit, "
-        "diameter_um, linear_density_dtex, strength, strength_mpa, remark, test_date) "
-        "VALUES (?,?,?,?,?,?,?,?,?,?)",
-        rows,
-    )
-    conn.commit()
+    rows = _sample_rows(batch_id, batch, samples)
+    with conn:
+        _insert_sample_rows(conn, rows)
     return len(rows)
 
 
 def recalculate_batch(conn: sqlite3.Connection, batch_id: int) -> int:
     """按当前批次信息重算该批次全部样本的强度缓存，返回样本数。"""
+    with conn:
+        return _recalculate_batch(conn, batch_id)
+
+
+def _recalculate_batch(conn: sqlite3.Connection, batch_id: int) -> int:
+    """事务内部使用的缓存重算实现，不自行提交。"""
     batch = get_batch_meta(conn, batch_id)
     rows = conn.execute(
         "SELECT id, breaking_force, force_unit, diameter_um, linear_density_dtex "
@@ -131,7 +176,6 @@ def recalculate_batch(conn: sqlite3.Connection, batch_id: int) -> int:
             "UPDATE samples SET strength = ?, strength_mpa = ? WHERE id = ?",
             (strength, strength_mpa, row["id"]),
         )
-    conn.commit()
     return len(rows)
 
 

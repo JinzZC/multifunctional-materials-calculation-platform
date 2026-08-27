@@ -57,6 +57,8 @@ def analyze_curve(disp_mm, force_n, diameter_um, gauge_mm,
         raise ValueError("曲线数据点不足（至少 5 个点）")
     if not np.all(np.isfinite(x)) or not np.all(np.isfinite(y)):
         raise ValueError("曲线数据包含无效数值")
+    if np.any(np.diff(x) < 0):
+        raise ValueError("位移数据必须按测试顺序单调不减，请检查列映射或原始数据顺序")
     if np.any(y < 0):
         raise ValueError("力数据不能为负")
 
@@ -75,10 +77,23 @@ def analyze_curve(disp_mm, force_n, diameter_um, gauge_mm,
            if fit_lo * f_max <= y[i] <= fit_hi * f_max]
     if len(sel) < 3:
         raise ValueError("线性拟合区间内数据点不足（<3 个），请调整拟合区间比例")
-    k, b = np.polyfit(x[sel], y[sel], 1)
-    if k <= 0:
-        raise ValueError("拟合斜率为负，曲线数据异常")
-    r2 = float(np.corrcoef(x[sel], y[sel])[0, 1] ** 2)
+    fit_x = x[sel]
+    fit_y = y[sel]
+    x_span = float(np.ptp(fit_x))
+    x_scale = max(float(np.max(np.abs(fit_x))), 1.0)
+    if x_span <= np.finfo(float).eps * x_scale * 100:
+        raise ValueError("线性拟合区间内位移没有有效变化，无法计算斜率")
+    k, b = np.polyfit(fit_x, fit_y, 1)
+    if not math.isfinite(k) or not math.isfinite(b) or k <= 0:
+        raise ValueError("线性拟合结果无效或斜率非正，请检查曲线数据")
+    fit_pred = k * fit_x + b
+    ss_res = float(np.sum((fit_y - fit_pred) ** 2))
+    ss_tot = float(np.sum((fit_y - np.mean(fit_y)) ** 2))
+    if ss_tot <= 0:
+        raise ValueError("线性拟合区间内力数据没有有效变化")
+    r2 = float(1.0 - ss_res / ss_tot)
+    if not math.isfinite(r2):
+        raise ValueError("线性拟合优度不是有限值，请检查曲线数据")
 
     # 平台校正：拟合线与位移轴交点（力=0 处）
     x0 = float(-b / k)

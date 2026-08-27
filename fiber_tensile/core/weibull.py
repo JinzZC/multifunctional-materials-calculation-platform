@@ -112,7 +112,7 @@ def _mle_profile_2p(values) -> tuple:
     """2 参数 Weibull 极大似然：对 m 做黄金分割一维搜索（轮廓似然）。
 
     给定 m 时 σ₀ 的 MLE 有闭式解 σ₀ = (Σσᵢ^m/n)^(1/m)，故只需一维优化。
-    返回 (m, sigma0)。
+    返回 (m, sigma0, search_hi)。
     """
     n = len(values)
     s = np.asarray(values, dtype=float)
@@ -140,6 +140,16 @@ def _mle_profile_2p(values) -> tuple:
 
     gr = (math.sqrt(5.0) - 1.0) / 2.0
     lo, hi = 0.05, 200.0
+    max_hi = 1.0e7
+    # 高一致性数据的 m 可能远大于 200。若目标函数在上界附近仍下降，
+    # 自动扩展区间，避免把边界值误当成正常估计结果。
+    while neg_loglik(hi) < neg_loglik(hi / 2.0):
+        hi *= 2.0
+        if hi > max_hi:
+            raise ValueError(
+                "强度数据离散程度过小，Weibull 模数超出可靠估计范围；"
+                "请检查测量精度、重复值或有效数字")
+    search_hi = hi
     c = hi - gr * (hi - lo)
     d = lo + gr * (hi - lo)
     fc, fd = neg_loglik(c), neg_loglik(d)
@@ -153,7 +163,7 @@ def _mle_profile_2p(values) -> tuple:
             d = lo + gr * (hi - lo)
             fd = neg_loglik(d)
     m = (lo + hi) / 2.0
-    return float(m), sigma0_of(m)
+    return float(m), sigma0_of(m), float(search_hi)
 
 
 def _check_strengths(values) -> None:
@@ -183,7 +193,7 @@ def weibull_fit_mle(strengths, rank_method: str = "hazen") -> WeibullResult:
     values = [float(s) for s in strengths]
     _check_strengths(values)
     sorted_s = sorted(values)
-    m, sigma0 = _mle_profile_2p(values)
+    m, sigma0, search_hi = _mle_profile_2p(values)
     x, y, f_hat = _build_transformed(sorted_s, 0.0, rank_method)
     y_pred = m * x - m * math.log(sigma0)
     r2 = _fit_r2(y, y_pred)
@@ -193,7 +203,7 @@ def weibull_fit_mle(strengths, rank_method: str = "hazen") -> WeibullResult:
         f"对 {len(values)} 个数据取对数后最大化",
         f"② 给定 m 时 σ₀ 的 MLE 有闭式解：σ₀ = (Σσᵢ^m/n)^(1/m)，"
         "因此只需对 m 做一维黄金分割搜索",
-        f"③ 黄金分割搜索区间 m ∈ [0.05, 200]，收敛容差 1e-8",
+        f"③ 自适应黄金分割搜索区间 m ∈ [0.05, {search_hi:g}]，收敛容差 1e-8",
         f"④ 结果：Weibull 模数 m = {m:.4f}，特征强度 σ₀ = {sigma0:.2f}",
         f"⑤ {rank_method_label(rank_method)} 线性化下的拟合优度 R² = {r2:.4f}（最小二乘法在该度量下最优，"
         "MLE 的优势是参数估计的统计最优性）",

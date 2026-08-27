@@ -94,6 +94,11 @@ def test_add_liquid_validation(db_conn):
         add_liquid(db_conn, "坏液体2", 40.0, 30.0, 20.0)
     with pytest.raises(ValueError, match="名称"):
         add_liquid(db_conn, "  ", 40.0, 30.0, 10.0)
+    for bad in (float("inf"), float("-inf"), float("nan")):
+        with pytest.raises(ValueError):
+            add_liquid(db_conn, f"非有限-{bad}", bad, 1.0, 0.0)
+        with pytest.raises(ValueError):
+            add_liquid(db_conn, f"非有限分量-{bad}", 40.0, bad, 0.0)
 
 
 def test_add_nonpolar_liquid_with_zero_polar(db_conn):

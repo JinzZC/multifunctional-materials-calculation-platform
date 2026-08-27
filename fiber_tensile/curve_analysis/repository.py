@@ -1,6 +1,7 @@
 """单丝曲线分析的持久层（表结构见 data/db.py 迁移 v3）。"""
 
 import json
+import math
 import sqlite3
 
 
@@ -13,7 +14,16 @@ def create_curve_analysis(conn: sqlite3.Connection, sample_name: str,
     name = (sample_name or "").strip()
     if not name:
         raise ValueError("样品名称不能为空")
-    points = [[round(float(x), 6), round(float(y), 6)] for x, y in zip(disp_mm, force_n)]
+    x_values = [float(x) for x in disp_mm]
+    y_values = [float(y) for y in force_n]
+    if len(x_values) != len(y_values):
+        raise ValueError("位移与力数据长度不一致，无法保存")
+    if not x_values:
+        raise ValueError("没有可保存的曲线数据")
+    if any(not math.isfinite(v) for v in x_values + y_values):
+        raise ValueError("曲线数据包含无效数值，无法保存")
+    # 数据库保留原始浮点精度；显示和报告层再按需要格式化。
+    points = [[x, y] for x, y in zip(x_values, y_values)]
     cur = conn.execute(
         "INSERT INTO fiber_curves (sample_name, diameter_um, gauge_length_mm, "
         "fit_lo, fit_hi, e_gpa, strength_mpa, elongation_pct, toe_eps_pct, r2, "

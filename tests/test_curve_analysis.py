@@ -83,6 +83,19 @@ def test_negative_force_rejected():
                       DIAMETER_UM, GAUGE_MM)
 
 
+def test_decreasing_displacement_rejected():
+    with pytest.raises(ValueError, match="单调不减"):
+        analyze_curve([0, 1, 0.5, 2, 3, 4], [0, 1, 2, 3, 4, 5],
+                      DIAMETER_UM, GAUGE_MM)
+
+
+def test_degenerate_fit_displacement_rejected_without_nan():
+    x = [0, 1, 1, 1, 1, 2]
+    force = [0, 2, 3, 4, 5, 6]
+    with pytest.raises(ValueError, match="位移没有有效变化"):
+        analyze_curve(x, force, DIAMETER_UM, GAUGE_MM)
+
+
 def test_all_equal_force_message():
     with pytest.raises(ValueError, match="全部相等"):
         analyze_curve(np.linspace(0, 1, 6), np.ones(6), DIAMETER_UM, GAUGE_MM)

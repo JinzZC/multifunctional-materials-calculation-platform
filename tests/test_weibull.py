@@ -208,6 +208,14 @@ def test_mle_extreme_dynamic_range_remains_finite():
     assert math.isfinite(result.sigma0) and result.sigma0 > 0
 
 
+def test_mle_adapts_beyond_legacy_shape_limit():
+    strengths = [100.0 + i * 0.0001 for i in range(30)]
+    result = weibull_fit_mle(strengths)
+    assert math.isfinite(result.m)
+    assert result.m > 200.0
+    assert any("自适应" in step for step in result.steps)
+
+
 def test_mle_and_3p_reject_constant_data():
     for fit in (weibull_fit_mle, weibull_fit_3p):
         with pytest.raises(ValueError, match="全部相等"):

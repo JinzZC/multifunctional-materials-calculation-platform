@@ -7,6 +7,7 @@ from fiber_tensile.data.db import open_database
 from fiber_tensile.data.repository import (
     add_samples,
     create_batch,
+    create_batch_with_samples,
     delete_batch,
     get_batch,
     get_strengths,
@@ -81,6 +82,36 @@ def test_recalculate_after_density_change(db_conn):
     s = get_batch(db_conn, bid).samples[0]
     assert s.strength == pytest.approx(5.0)
     assert s.strength_mpa == pytest.approx(570.0)
+
+
+def test_invalid_density_update_rolls_back_metadata_and_cache(db_conn):
+    bid = create_batch(db_conn, Batch(batch_name="T1", mode=MODE_TEXTILE, density=1.0))
+    add_samples(db_conn, bid, [Sample(breaking_force=5.0, linear_density_dtex=1.0)])
+
+    with pytest.raises(ValueError):
+        update_batch(db_conn, bid, density=-1.0)
+
+    batch = get_batch(db_conn, bid)
+    assert batch.density == pytest.approx(1.0)
+    assert batch.samples[0].strength_mpa == pytest.approx(500.0)
+
+
+def test_create_batch_with_samples_is_atomic(db_conn):
+    before = len(list_batches(db_conn))
+    with pytest.raises(ValueError):
+        create_batch_with_samples(
+            db_conn,
+            Batch(batch_name="坏批次", mode=MODE_FILAMENT),
+            [Sample(breaking_force=10.0)],
+        )
+    assert len(list_batches(db_conn)) == before
+
+
+def test_create_batch_rejects_nonfinite_density(db_conn):
+    for density in (-1.0, 0.0, float("inf"), float("nan")):
+        with pytest.raises(ValueError):
+            create_batch(db_conn, Batch(batch_name="X", mode=MODE_TEXTILE,
+                                        density=density))
 
 
 def test_recalculate_after_raw_value_change(db_conn):

@@ -21,7 +21,7 @@ from PySide6.QtWidgets import (
 from ..core.models import Batch, Sample
 from ..core.modes import MODES, get_mode_spec
 from ..core.units import force_to_cn
-from ..data.repository import add_samples, create_batch
+from ..data.repository import add_samples, create_batch_with_samples
 from ..fileio.template import generate_template
 from . import prefs
 from .dialogs import ImportWizardDialog
@@ -241,6 +241,7 @@ class EntryTab(QWidget):
         spec = self._spec()
         r = self._table.rowCount()
         self._table.insertRow(r)
+        self._set_mode_locked(True)
         dim = getattr(sample, spec.dim_field)
         values = [
             sample.sample_no or "",
@@ -262,6 +263,8 @@ class EntryTab(QWidget):
         for r in rows:
             self._table.removeRow(r)
             del self._pending[r]
+        if not self._pending:
+            self._set_mode_locked(False)
         if rows:
             self.data_changed.emit()
 
@@ -273,7 +276,15 @@ class EntryTab(QWidget):
             return
         self._table.setRowCount(0)
         self._pending.clear()
+        self._set_mode_locked(False)
         self.data_changed.emit()
+
+    def _set_mode_locked(self, locked: bool) -> None:
+        """暂存数据存在时锁定计算模式，避免样本维度与批次模式不一致。"""
+        current = self._mode()
+        for key, radio in self._radio_modes.items():
+            radio.setEnabled(not locked or key == current)
+            radio.setToolTip("请先清空当前未保存数据再切换模式" if locked else "")
 
     # ---- 添加 / 导入 / 保存 ----
 
@@ -315,8 +326,7 @@ class EntryTab(QWidget):
                     mode=result["mode"],
                     density=result["density"],
                 )
-                bid = create_batch(self._conn, batch)
-                n = add_samples(self._conn, bid, result["samples"])
+                bid, n = create_batch_with_samples(self._conn, batch, result["samples"])
                 self.saved.emit(bid)
                 logger.info(f"导入新建批次「{batch.batch_name}」(id={bid})，{n} 条数据")
                 QMessageBox.information(
@@ -344,14 +354,14 @@ class EntryTab(QWidget):
             remark=self._edit_remark.text().strip() or None,
         )
         try:
-            bid = create_batch(self._conn, batch)
-            n = add_samples(self._conn, bid, self._pending)
+            bid, n = create_batch_with_samples(self._conn, batch, self._pending)
         except ValueError as e:
             logger.warning(f"保存失败：{e}")
             QMessageBox.warning(self, "保存失败", str(e))
             return
         self._table.setRowCount(0)
         self._pending.clear()
+        self._set_mode_locked(False)
         self.saved.emit(bid)
         self.data_changed.emit()
         logger.info(f"已保存 {n} 条数据到批次「{name}」(id={bid})")
