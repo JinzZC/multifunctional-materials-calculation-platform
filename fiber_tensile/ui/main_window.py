@@ -26,19 +26,23 @@ from .background import BackgroundSettingsDialog, BackgroundWidget
 from .entry_tab import EntryTab
 from .history_tab import HistoryTab
 
-_NAV_STYLE = """
-QListWidget {
+def _nav_style(glass: bool) -> str:
+    background = "rgba(247, 250, 253, 205)" if glass else "#F7FAFD"
+    hover = "rgba(221, 235, 247, 225)" if glass else "#DDEBF7"
+    return """
+QListWidget {{
     border: 1px solid #C9D7E8; border-radius: 6px;
-    background: #F7FAFD; font-size: 12pt; padding: 4px;
-}
-QListWidget::item {
+    background: {background}; font-size: 12pt; padding: 4px;
+}}
+QListWidget::item {{
     padding: 12px 8px; border-radius: 4px; color: #1F4E79;
-}
-QListWidget::item:selected {
-    background: #1F4E79; color: white;
-}
-QListWidget::item:hover:!selected { background: #DDEBF7; }
-"""
+    background: rgba(255, 255, 255, 72);
+}}
+QListWidget::item:selected {{
+    background: rgba(31, 78, 121, 225); color: white;
+}}
+QListWidget::item:hover:!selected {{ background: {hover}; }}
+""".format(background=background, hover=hover)
 
 
 class MainWindow(QMainWindow):
@@ -64,7 +68,7 @@ class MainWindow(QMainWindow):
         self._nav.setFixedWidth(190)
         self._nav.setWordWrap(True)          # 模块名过长时自动换行，保证完整显示
         self._nav.setUniformItemSizes(False)
-        self._nav.setStyleSheet(_NAV_STYLE)
+        self._nav.setStyleSheet(_nav_style(prefs.background_enabled()))
         self._nav.addItem(QListWidgetItem("纤维拉伸强度分析模块"))
         self._nav.addItem(QListWidgetItem("接触角表面能模块"))
         self._nav.addItem(QListWidgetItem("复合材料基础计算模块"))
@@ -144,6 +148,7 @@ class MainWindow(QMainWindow):
     def _show_background_settings(self) -> None:
         if BackgroundSettingsDialog(self).exec() == QDialog.Accepted:
             self._background.reload_background()
+            self._nav.setStyleSheet(_nav_style(prefs.background_enabled()))
 
     def _show_about(self) -> None:
         from PySide6.QtWidgets import QMessageBox

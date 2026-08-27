@@ -3,6 +3,7 @@
 from pathlib import Path
 
 from fiber_tensile.config import asset_path
+from fiber_tensile.ui.background import GLASS_STYLE
 from scripts import build
 
 
@@ -19,3 +20,10 @@ def test_build_includes_icon_and_assets():
     assert str(build.ICON) in build._COMMON
     assert "--add-data" in build._COMMON
     assert build.ICON.is_file()
+
+
+def test_glass_style_covers_data_entry_widgets():
+    assert "BackgroundWidget QTableView" in GLASS_STYLE
+    assert "BackgroundWidget QLineEdit" in GLASS_STYLE
+    assert "BackgroundWidget QGroupBox" in GLASS_STYLE
+    assert "rgba(" in GLASS_STYLE

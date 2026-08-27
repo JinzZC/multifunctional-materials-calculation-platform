@@ -115,7 +115,8 @@ class EntryTab(QWidget):
         self._lbl_preview.setAlignment(Qt.AlignCenter)
         self._lbl_preview.setStyleSheet(
             "font-weight: bold; color: #1F4E79; padding: 8px;"
-            "background: #F2F6FB; border: 1px solid #C9D7E8; border-radius: 4px;")
+            "background: rgba(242, 246, 251, 190);"
+            "border: 1px solid #C9D7E8; border-radius: 4px;")
         left.addWidget(self._lbl_preview)
 
         btn_row = QHBoxLayout()

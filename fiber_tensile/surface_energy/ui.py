@@ -112,13 +112,13 @@ class SurfaceEnergyTab(QWidget):
         self._lbl_equations.setWordWrap(True)
         self._lbl_equations.setAlignment(Qt.AlignTop | Qt.AlignLeft)
         self._lbl_equations.setStyleSheet(
-            "font-size: 9pt; background: #FBFDFF; padding: 6px;")
+            "font-size: 9pt; background: rgba(251, 253, 255, 150); padding: 6px;")
         self._scroll_equations = QScrollArea()
         self._scroll_equations.setWidgetResizable(True)
         self._scroll_equations.setWidget(self._lbl_equations)
         self._scroll_equations.setStyleSheet(
             "QScrollArea { border: 1px solid #DDEBF7; border-radius: 4px;"
-            "background: #FBFDFF; }")
+            "background: rgba(251, 253, 255, 165); }")
         self._scroll_equations.setMinimumHeight(140)
         eq_lay.addWidget(self._scroll_equations)
         top_row.addWidget(eq_box, 3)
