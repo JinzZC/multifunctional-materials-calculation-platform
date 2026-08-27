@@ -9,7 +9,7 @@ import sys
 
 from PySide6.QtWidgets import QApplication, QMessageBox
 
-from fiber_tensile.config import APP_NAME, APP_VERSION, apply_matplotlib_chinese, default_db_path
+from fiber_tensile.config import APP_NAME, APP_VERSION, default_db_path
 from fiber_tensile.data.db import open_database
 from fiber_tensile.logging_setup import install_excepthook, setup_logging
 from fiber_tensile.ui.main_window import MainWindow
@@ -30,7 +30,6 @@ def main() -> int:
     logger = logging.getLogger("app")
     install_excepthook(logger, on_crash=_crash_dialog)
 
-    apply_matplotlib_chinese()
     app = QApplication(sys.argv)
     app.setApplicationName(APP_NAME)
     logger.info(f"启动 {APP_NAME} v{APP_VERSION}（数据库：{db_path}，日志：{log_path}）")

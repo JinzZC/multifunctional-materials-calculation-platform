@@ -119,6 +119,9 @@ class AnalysisTab(QWidget):
         self._combo_wfit.addItem("二参数线性最小二乘法", "lsq")
         self._combo_wfit.addItem("极大似然法（MLE，参数最优）", "mle")
         self._combo_wfit.addItem("三参数 Weibull（非线性最小二乘）", "mle3p")
+        saved_fit = prefs.weibull_fit_method()
+        saved_fit_index = self._combo_wfit.findData(saved_fit)
+        self._combo_wfit.setCurrentIndex(saved_fit_index if saved_fit_index >= 0 else 0)
         self._combo_wfit.currentIndexChanged.connect(self._on_wfit_changed)
         wfit_row.addWidget(self._combo_wfit, 1)
         w_layout.addLayout(wfit_row)
@@ -294,6 +297,9 @@ class AnalysisTab(QWidget):
 
     def _on_wfit_changed(self, *args) -> None:
         """切换拟合方法后重算（仅重算 Weibull 部分）。"""
+        method = self._combo_wfit.currentData()
+        if method:
+            prefs.set_weibull_fit_method(method)
         payload = self._current_payload()
         if payload is None:
             return

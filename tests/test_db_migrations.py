@@ -2,6 +2,8 @@
 
 import sqlite3
 
+import pytest
+
 import fiber_tensile.data.db as db_module
 from fiber_tensile.data.db import MIGRATIONS, get_schema_version, migrate, open_database
 
@@ -77,3 +79,24 @@ def test_existing_database_upgraded_when_new_version_added(monkeypatch, tmp_path
         assert conn.execute("SELECT COUNT(*) AS c FROM batches").fetchone()["c"] == 1
     finally:
         conn.close()
+
+
+def test_failed_migration_rolls_back_schema_and_version(monkeypatch, tmp_path):
+    """迁移中途失败时，新表和版本标记必须一起回滚。"""
+    broken = ("CREATE TABLE half_applied (id INTEGER PRIMARY KEY);"
+              "INSERT INTO table_that_does_not_exist VALUES (1);")
+    monkeypatch.setattr(db_module, "MIGRATIONS", MIGRATIONS + [(4, broken)])
+    path = str(tmp_path / "atomic.db")
+    with pytest.raises(sqlite3.OperationalError):
+        open_database(path)
+
+    raw = sqlite3.connect(path)
+    try:
+        tables = {row[0] for row in raw.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'")}
+        versions = {row[0] for row in raw.execute(
+            "SELECT version FROM schema_migrations")}
+        assert "half_applied" not in tables
+        assert 4 not in versions
+    finally:
+        raw.close()

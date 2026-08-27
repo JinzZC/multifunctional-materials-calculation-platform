@@ -27,7 +27,8 @@ def build_curve_figure(disp_mm, force_n, result,
     ax.plot(xline, result.fit_k * xline + result.fit_b,
             linewidth=1.5, linestyle="--", label="线性区拟合")
     ax.axvline(result.toe_disp_mm, color="green", linestyle=":",
-               linewidth=1.2, label=f"平台校正点（位移₀={result.toe_disp_mm:.3f} mm）")
+               linewidth=1.2,
+               label=f"平台校正点（$x_0$={result.toe_disp_mm:.3f} mm）")
     ax.scatter([x[result.break_idx]], [y[result.break_idx]], s=40,
                color="red", zorder=5, label="断裂点")
     ax.set_xlabel("位移 (mm)")

@@ -9,6 +9,7 @@ from datetime import datetime
 
 from .core import METHOD_LABELS, compute_surface_energy
 from ..fileio.excel_safe import set_cell_value
+from ..fileio.atomic import atomic_write
 
 _SE_TABLE_HEADERS = ["液体名称", "γ_L（表面张力, mN/m）", "γ^d（色散分量, mN/m）",
                      "γ^p（极性分量, mN/m）", "接触角 θ（度）"]
@@ -133,7 +134,7 @@ def export_excel_report(path, sample_name: str, method: str, points: list,
         c.font = Font(bold=True, size=12)
         row += 1
         table(ws, row, _PER_HEADERS, per_rows)
-    wb.save(path)
+    atomic_write(path, wb.save)
 
 
 def export_pdf_report(path, sample_name: str, method: str, points: list,

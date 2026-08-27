@@ -163,7 +163,8 @@ def parse_measurement_file(path) -> ImportPreview:
                 f"缺少必填列「{required}」（液体名称、γ_L、接触角为必填）")
 
     preview = ImportPreview()
-    sample_names: set = set()
+    sample_names: list[str] = []
+    sample_name_seen: set[str] = set()
     methods: set = set()
     remark = test_date = None
     for idx, row in df.iterrows():
@@ -188,7 +189,10 @@ def parse_measurement_file(path) -> ImportPreview:
         angle = _parse_angle(row[mapping["angle"]], row_number, errors)
 
         if "sample_name" in mapping and not _is_blank(row[mapping["sample_name"]]):
-            sample_names.add(str(row[mapping["sample_name"]]).strip())
+            sample_name = str(row[mapping["sample_name"]]).strip()
+            if sample_name not in sample_name_seen:
+                sample_name_seen.add(sample_name)
+                sample_names.append(sample_name)
         if "method" in mapping:
             m = _parse_method(row[mapping["method"]], row_number, errors)
             if m:
@@ -212,8 +216,7 @@ def parse_measurement_file(path) -> ImportPreview:
             liquid_name=liquid_name, gamma_total=gamma_total, angle_deg=angle,
             gamma_d=gamma_d, gamma_p=gamma_p))
 
-    preview.sample_name = next(iter(sample_names)) if len(sample_names) == 1 else (
-        Path(path).stem if not sample_names else min(sample_names))
+    preview.sample_name = sample_names[0] if sample_names else Path(path).stem
     if len(sample_names) > 1:
         preview.warnings.append(RowError(1, "文件中出现多个样品名称，已取第一个", "sample_name"))
     if len(methods) == 1:

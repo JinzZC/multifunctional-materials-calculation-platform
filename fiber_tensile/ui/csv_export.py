@@ -6,14 +6,20 @@ import os
 from PySide6.QtWidgets import QFileDialog, QMessageBox
 
 from ..config import sanitize_filename
+from ..fileio.atomic import atomic_write
+from ..fileio.excel_safe import spreadsheet_safe_text
 from . import prefs
 
 
 def export_csv(path: str, headers: list, rows: list) -> None:
-    with open(path, "w", encoding="utf-8-sig", newline="") as f:
-        writer = csv.writer(f)
-        writer.writerow(headers)
-        writer.writerows(rows)
+    def write(temporary: str) -> None:
+        with open(temporary, "w", encoding="utf-8-sig", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow([spreadsheet_safe_text(v) for v in headers])
+            writer.writerows(
+                [spreadsheet_safe_text(v) for v in row] for row in rows)
+
+    atomic_write(path, write)
 
 
 def save_csv_dialog(parent, default_name: str, headers: list, rows: list) -> bool:

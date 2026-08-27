@@ -6,6 +6,7 @@ _ORG = "FiberTensile"
 _APP = "FiberTensileAnalyzer"
 _VALID_UNITS = ("cN", "N", "mN")
 _VALID_WEIBULL_RANK_METHODS = ("hazen", "mean_rank", "benard", "blom")
+_VALID_WEIBULL_FIT_METHODS = ("lsq", "mle", "mle3p")
 
 
 def _settings() -> QSettings:
@@ -64,3 +65,14 @@ def weibull_rank_method() -> str:
 def set_weibull_rank_method(method: str) -> None:
     if method in _VALID_WEIBULL_RANK_METHODS:
         _settings().setValue("analysis/weibull_rank_method", method)
+
+
+def weibull_fit_method() -> str:
+    """上次使用的 Weibull 参数拟合方法。"""
+    method = str(_settings().value("analysis/weibull_fit_method", "lsq"))
+    return method if method in _VALID_WEIBULL_FIT_METHODS else "lsq"
+
+
+def set_weibull_fit_method(method: str) -> None:
+    if method in _VALID_WEIBULL_FIT_METHODS:
+        _settings().setValue("analysis/weibull_fit_method", method)

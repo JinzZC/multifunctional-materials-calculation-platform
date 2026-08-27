@@ -12,7 +12,7 @@ import sqlite3
 from PySide6.QtGui import QAction
 from PySide6.QtWidgets import (
     QHBoxLayout, QListWidget, QListWidgetItem, QMainWindow, QStackedWidget,
-    QTabWidget, QVBoxLayout, QWidget,
+    QMessageBox, QTabWidget, QVBoxLayout, QWidget,
 )
 
 from ..composites.ui import CompositesTab
@@ -158,6 +158,21 @@ class MainWindow(QMainWindow):
         self.history_tab.refresh()
 
     def closeEvent(self, event) -> None:
+        if self.entry_tab.has_pending_data():
+            answer = QMessageBox.question(
+                self, "存在未保存数据",
+                "纤维拉伸强度录入页仍有未保存数据，确定放弃并退出吗？",
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.No)
+            if answer != QMessageBox.Yes:
+                event.ignore()
+                return
+        if not self.excel_merger_tab.shutdown():
+            QMessageBox.warning(
+                self, "暂时无法退出",
+                "表格数据提取任务尚未安全停止，请稍后再关闭软件。")
+            event.ignore()
+            return
         prefs.save_geometry(self.saveGeometry())
         prefs.set_last_module(self._nav.currentRow())
+        self._conn.close()
         super().closeEvent(event)

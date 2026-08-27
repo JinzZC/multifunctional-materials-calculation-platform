@@ -139,6 +139,7 @@ def get_connection(db_path: str) -> sqlite3.Connection:
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
+    conn.execute("PRAGMA busy_timeout = 5000")
     return conn
 
 
@@ -148,13 +149,23 @@ def migrate(conn: sqlite3.Connection) -> None:
         "CREATE TABLE IF NOT EXISTS schema_migrations ("
         "version INTEGER PRIMARY KEY,"
         "applied_at TEXT NOT NULL DEFAULT (datetime('now','localtime')))")
+    conn.commit()
     applied = {r["version"] for r in conn.execute("SELECT version FROM schema_migrations")}
     for version, script in sorted(MIGRATIONS):
         if version in applied:
             continue
-        conn.executescript(script)   # 注意：executescript 会先提交当前事务
-        conn.execute("INSERT INTO schema_migrations (version) VALUES (?)", (version,))
-    conn.commit()
+        # executescript 会先提交已有事务，因此把 BEGIN、结构修改和版本标记放进
+        # 同一段脚本；任何 SQL 失败都不会留下“结构已变、版本未记录”的半迁移状态。
+        migration_sql = (
+            "BEGIN IMMEDIATE;\n" + script +
+            f"\nINSERT INTO schema_migrations (version) VALUES ({int(version)});\n"
+            "COMMIT;")
+        try:
+            conn.executescript(migration_sql)
+        except Exception:
+            if conn.in_transaction:
+                conn.rollback()
+            raise
 
 
 def get_schema_version(conn: sqlite3.Connection) -> int:

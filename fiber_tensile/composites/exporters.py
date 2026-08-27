@@ -2,6 +2,7 @@
 
 from datetime import datetime
 from ..fileio.excel_safe import set_cell_value
+from ..fileio.atomic import atomic_write
 
 _TYPE_LABELS = {"rom": "单层板工程常数（混合法则）", "volume_fraction": "纤维体积分数/孔隙率"}
 
@@ -48,7 +49,7 @@ def export_excel_report(path, calc_type, sample_name, inputs,
     for line in steps:
         set_cell_value(ws.cell(row, 1), line)
         row += 1
-    wb.save(path)
+    atomic_write(path, wb.save)
 
 
 def export_pdf_report(path, calc_type, sample_name, inputs,

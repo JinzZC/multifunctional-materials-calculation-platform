@@ -19,3 +19,12 @@ def test_export_csv_utf8_bom(tmp_path):
     with open(path, encoding="utf-8-sig", newline="") as f:
         reader = csv.reader(f)
         assert list(reader) == [["编号", "值"], ["1", "2.5"], ["2", "3.7"]]
+
+
+def test_export_csv_neutralises_spreadsheet_formulas(tmp_path):
+    path = tmp_path / "safe.csv"
+    export_csv(str(path), ["样品名", "备注"], [["=1+1", "@SUM(A1:A2)"], ["正常", -2.5]])
+    with open(path, encoding="utf-8-sig", newline="") as f:
+        rows = list(csv.reader(f))
+    assert rows[1] == ["'=1+1", "'@SUM(A1:A2)"]
+    assert rows[2] == ["正常", "-2.5"]

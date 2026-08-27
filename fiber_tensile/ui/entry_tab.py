@@ -45,6 +45,10 @@ class EntryTab(QWidget):
         self._connect_signals()
         self._on_mode_changed()
 
+    def has_pending_data(self) -> bool:
+        """当前是否存在尚未保存到数据库的样本。"""
+        return bool(self._pending)
+
     # ---- UI 构建 ----
 
     def _build_ui(self) -> None:

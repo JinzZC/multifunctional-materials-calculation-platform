@@ -383,18 +383,15 @@ class ExcelMergerTab(QWidget):
 
     @Slot(object)
     def _preview_ready(self, result):
-        self._set_busy(False)
         self._result = result
         self._show_result(result)
 
     @Slot(str)
     def _preview_failed(self, message):
-        self._set_busy(False)
         QMessageBox.critical(self, "提取失败", message)
 
     @Slot()
     def _preview_cancelled(self):
-        self._set_busy(False)
         self._lbl_summary.setText("提取已取消，未生成新的合并结果")
 
     @Slot(int, int, str)
@@ -413,6 +410,16 @@ class ExcelMergerTab(QWidget):
     def _task_finished(self):
         self._worker = None
         self._thread = None
+        self._set_busy(False)
+
+    def shutdown(self, timeout_ms: int = 5000) -> bool:
+        """请求后台合并任务停止并等待线程退出，供主窗口关闭时调用。"""
+        thread = self._thread
+        if thread is None or not thread.isRunning():
+            return True
+        thread.requestInterruption()
+        thread.quit()
+        return bool(thread.wait(timeout_ms))
 
     def _show_result(self, result: MergeResult):
         shown = min(len(result.rows), PREVIEW_LIMIT)

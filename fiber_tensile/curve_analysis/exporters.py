@@ -2,6 +2,7 @@
 
 from datetime import datetime
 from ..fileio.excel_safe import set_cell_value
+from ..fileio.atomic import atomic_write
 
 
 def _build_rows(sample_name, diameter_um, gauge_mm, result, remark, test_date):
@@ -64,7 +65,7 @@ def export_excel_report(path, sample_name, diameter_um, gauge_mm, result,
     img.width = 640
     img.height = 460
     ws.add_image(img, "D2")
-    wb.save(path)
+    atomic_write(path, wb.save)
 
 
 def export_pdf_report(path, sample_name, diameter_um, gauge_mm, result,

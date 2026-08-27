@@ -7,6 +7,7 @@ from ..core.models import MODE_LABELS
 from ..core.modes import get_mode_spec
 from ..core.weibull import rank_method_label
 from .excel_safe import set_cell_value
+from .atomic import atomic_write
 
 
 def _styles():
@@ -176,4 +177,4 @@ def export_excel_report(path, batch, analysis=None, weibull=None) -> None:
         for i, w in enumerate([8, 14, 16, 12, 18], start=1):
             ws3.column_dimensions[get_column_letter(i)].width = w
 
-    wb.save(path)
+    atomic_write(path, wb.save)

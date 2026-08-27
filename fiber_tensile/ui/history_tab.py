@@ -14,16 +14,27 @@ from PySide6.QtWidgets import (
 
 from ..core.models import MODE_FILAMENT, MODE_LABELS, MODE_TEXTILE, strength_unit_label
 from ..core.statistics import batch_statistics
-from ..core.weibull import weibull_fit
+from ..core.weibull import weibull_fit, weibull_fit_3p, weibull_fit_mle
 from ..data.repository import (
     delete_batch, get_batch, get_strengths, list_batches, recalculate_batch,
 )
 from .analysis_tab import export_batch_report
+from . import prefs
 from .csv_export import save_csv_dialog
 from .dialogs import CompareDialog
 
 
 logger = logging.getLogger(__name__)
+
+
+def _fit_weibull_with_preferences(strengths: list):
+    fit_method = prefs.weibull_fit_method()
+    rank_method = prefs.weibull_rank_method()
+    if fit_method == "mle":
+        return weibull_fit_mle(strengths, rank_method)
+    if fit_method == "mle3p":
+        return weibull_fit_3p(strengths, rank_method)
+    return weibull_fit(strengths, rank_method)
 
 
 class HistoryTab(QWidget):
@@ -234,7 +245,7 @@ class HistoryTab(QWidget):
                              if batch.mode == MODE_FILAMENT else strengths)
             try:
                 stats = batch_statistics(strengths)
-                weibull = weibull_fit(fit_strengths)
+                weibull = _fit_weibull_with_preferences(fit_strengths)
             except ValueError:
                 continue
             payload.append((batch, stats, weibull))
@@ -281,7 +292,11 @@ class HistoryTab(QWidget):
             return
         batch = get_batch(self._conn, selected[0].id)
         strengths = get_strengths(self._conn, selected[0].id)
-        export_batch_report(self, batch, strengths, kind)
+        export_batch_report(
+            self, batch, strengths, kind,
+            fit_method=prefs.weibull_fit_method(),
+            rank_method=prefs.weibull_rank_method(),
+        )
 
     def _export_csv(self) -> None:
         """把选中批次的样本明细导出为 CSV。"""

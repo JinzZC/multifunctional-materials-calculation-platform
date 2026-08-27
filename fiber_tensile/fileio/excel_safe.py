@@ -6,6 +6,13 @@ from __future__ import annotations
 _FORMULA_PREFIXES = ("=", "+", "-", "@")
 
 
+def spreadsheet_safe_text(value):
+    """供 CSV 等文本表格使用：用撇号阻止 Excel 把外部文本解释为公式。"""
+    if isinstance(value, str) and value.startswith(_FORMULA_PREFIXES):
+        return "'" + value
+    return value
+
+
 def set_cell_value(cell, value):
     """设置单元格值，并把可能触发公式解释的字符串强制标记为文本。
 
