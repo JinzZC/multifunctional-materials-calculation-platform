@@ -9,7 +9,7 @@ from datetime import datetime
 
 from .core import METHOD_LABELS, compute_surface_energy
 from ..fileio.excel_safe import set_cell_value
-from ..fileio.atomic import atomic_write
+from ..fileio.atomic import atomic_write, atomic_write_bytes
 
 _SE_TABLE_HEADERS = ["液体名称", "γ_L（表面张力, mN/m）", "γ^d（色散分量, mN/m）",
                      "γ^p（极性分量, mN/m）", "接触角 θ（度）"]
@@ -179,7 +179,8 @@ def export_pdf_report(path, sample_name: str, method: str, points: list,
     result = compute_surface_energy(method, points)
     result_rows, liquid_rows, per_rows = _build_data_tables(method, points, result)
 
-    doc = SimpleDocTemplate(str(path), pagesize=A4,
+    pdf_buffer = BytesIO()
+    doc = SimpleDocTemplate(pdf_buffer, pagesize=A4,
                             leftMargin=2 * cm, rightMargin=2 * cm,
                             topMargin=2 * cm, bottomMargin=2 * cm,
                             title=f"表面能分析报告 - {sample_name}")
@@ -217,3 +218,4 @@ def export_pdf_report(path, sample_name: str, method: str, points: list,
                            + [[p(v, cell) for v in r] for r in per_rows],
                            colWidths=[4 * cm, 5.5 * cm, 5.5 * cm], style=grid))
     doc.build(story)
+    atomic_write_bytes(path, pdf_buffer.getvalue())

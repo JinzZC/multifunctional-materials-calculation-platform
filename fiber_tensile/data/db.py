@@ -9,6 +9,8 @@
 
 import os
 import sqlite3
+from datetime import datetime
+from pathlib import Path
 
 # ---------- 迁移脚本（按版本号递增追加，勿修改历史版本） ----------
 
@@ -174,11 +176,44 @@ def get_schema_version(conn: sqlite3.Connection) -> int:
     return row["v"] or 0
 
 
+def _migration_required(conn: sqlite3.Connection) -> bool:
+    table_exists = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='schema_migrations'"
+    ).fetchone()
+    if table_exists is None:
+        return True
+    applied = {row["version"] for row in conn.execute(
+        "SELECT version FROM schema_migrations")}
+    return any(version not in applied for version, _ in MIGRATIONS)
+
+
+def _backup_before_migration(conn: sqlite3.Connection, db_path: str) -> Path:
+    """在结构升级前使用 SQLite 在线备份 API 创建可恢复副本。"""
+    source = Path(db_path)
+    backup_dir = source.parent / "backups"
+    backup_dir.mkdir(parents=True, exist_ok=True)
+    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S-%f")
+    target = backup_dir / f"{source.stem}-迁移前-{timestamp}.db"
+    destination = sqlite3.connect(target)
+    try:
+        conn.backup(destination)
+    finally:
+        destination.close()
+    return target
+
+
 def open_database(db_path: str) -> sqlite3.Connection:
     """打开数据库并迁移到最新 schema；父目录不存在时自动创建。"""
     parent = os.path.dirname(db_path)
     if parent:
         os.makedirs(parent, exist_ok=True)
+    had_existing_data = os.path.isfile(db_path) and os.path.getsize(db_path) > 0
     conn = get_connection(db_path)
-    migrate(conn)
-    return conn
+    try:
+        if had_existing_data and _migration_required(conn):
+            _backup_before_migration(conn, db_path)
+        migrate(conn)
+        return conn
+    except Exception:
+        conn.close()
+        raise

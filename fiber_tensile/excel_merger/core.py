@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import os
 import csv
-import io
 import re
 import tempfile
 import unicodedata
@@ -251,27 +250,35 @@ def merge_workbooks(paths: Iterable[str | os.PathLike], options: MergeOptions | 
 
 def _extract_delimited(path, opts, result, records, display_names, key_orders,
                        is_cancelled=None) -> None:
-    text, encoding = _decode_delimited(path.read_bytes())
-    sample = text[:65536]
+    encoding = _detect_delimited_encoding(path, is_cancelled)
+    with path.open("r", encoding=encoding, newline="") as stream:
+        sample = stream.read(65536)
     try:
         dialect = csv.Sniffer().sniff(sample, delimiters=",\t;|")
     except csv.Error:
         dialect = csv.excel if path.suffix.lower() == ".csv" else csv.excel_tab
     delimiter = dialect.delimiter
-    # StringIO 保留引号字段中的换行，避免用 splitlines 破坏合法 CSV 记录。
-    rows = list(csv.reader(io.StringIO(text, newline=""), dialect=dialect))
-    if len(rows) < opts.header_row:
+    header_values = None
+    max_columns = 0
+    # 第一遍只确定表头和最大列数，不把整份文件复制到内存。
+    with path.open("r", encoding=encoding, newline="") as stream:
+        for row_number, row in enumerate(csv.reader(stream, dialect=dialect), start=1):
+            if row_number % 1000 == 0:
+                _check_cancelled(is_cancelled)
+            if row_number == opts.header_row:
+                header_values = row
+            if row_number >= opts.header_row:
+                max_columns = max(max_columns, len(row))
+    if header_values is None:
         result.statuses.append(FileStatus(
             str(path), "分隔文本", status="跳过",
             message=f"文件不足 {opts.header_row} 行，无法读取表头"))
         return
-    header_values = rows[opts.header_row - 1]
     if not any(not _blank(value) for value in header_values):
         result.statuses.append(FileStatus(
             str(path), "分隔文本", status="跳过",
             message=f"第 {opts.header_row} 行没有表头"))
         return
-    max_columns = max([len(header_values)] + [len(row) for row in rows[opts.header_row:]])
     raw_headers = list(header_values) + [None] * (max_columns - len(header_values))
     keys, names, header_warnings = _prepare_headers(raw_headers, opts.column_mappings)
     for warning in header_warnings:
@@ -281,21 +288,24 @@ def _extract_delimited(path, opts, result, records, display_names, key_orders,
     key_orders.append(keys)
 
     count = 0
-    for row_number, raw in enumerate(rows[opts.header_row:], start=opts.header_row + 1):
-        if row_number % 1000 == 0:
-            _check_cancelled(is_cancelled)
-        values = list(raw) + [None] * (max_columns - len(raw))
-        if opts.skip_empty_rows and all(_blank(value) for value in values):
-            continue
-        source = {
-            "来源文件夹": str(path.parent),
-            "来源文件": path.name,
-            "来源工作表": "分隔文本",
-            "原始行号": row_number,
-            "__values__": {key: value for key, value in zip(keys, values)},
-        }
-        records.append(source)
-        count += 1
+    with path.open("r", encoding=encoding, newline="") as stream:
+        for row_number, raw in enumerate(csv.reader(stream, dialect=dialect), start=1):
+            if row_number <= opts.header_row:
+                continue
+            if row_number % 1000 == 0:
+                _check_cancelled(is_cancelled)
+            values = list(raw) + [None] * (max_columns - len(raw))
+            if opts.skip_empty_rows and all(_blank(value) for value in values):
+                continue
+            source = {
+                "来源文件夹": str(path.parent),
+                "来源文件": path.name,
+                "来源工作表": "分隔文本",
+                "原始行号": row_number,
+                "__values__": {key: value for key, value in zip(keys, values)},
+            }
+            records.append(source)
+            count += 1
     delimiter_name = {",": "逗号", "\t": "制表符", ";": "分号", "|": "竖线"}.get(
         delimiter, repr(delimiter))
     result.statuses.append(FileStatus(
@@ -303,10 +313,14 @@ def _extract_delimited(path, opts, result, records, display_names, key_orders,
         message=f"编码 {encoding}，{delimiter_name}分隔"))
 
 
-def _decode_delimited(data: bytes) -> tuple[str, str]:
+def _detect_delimited_encoding(path: Path, is_cancelled=None) -> str:
+    """分块验证编码，避免为了识别编码一次性读取整份文本文件。"""
     for encoding in ("utf-8-sig", "utf-16", "gb18030"):
         try:
-            return data.decode(encoding), encoding
+            with path.open("r", encoding=encoding, newline="") as stream:
+                while stream.read(1024 * 1024):
+                    _check_cancelled(is_cancelled)
+            return encoding
         except (UnicodeDecodeError, UnicodeError):
             continue
     raise ValueError("无法识别文本编码（支持 UTF-8、UTF-16、GB18030）")

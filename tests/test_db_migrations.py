@@ -77,6 +77,8 @@ def test_existing_database_upgraded_when_new_version_added(monkeypatch, tmp_path
     try:
         assert get_schema_version(conn) == 4
         assert conn.execute("SELECT COUNT(*) AS c FROM batches").fetchone()["c"] == 1
+        backups = list((tmp_path / "backups").glob("d-迁移前-*.db"))
+        assert len(backups) == 1
     finally:
         conn.close()
 

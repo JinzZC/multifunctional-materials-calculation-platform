@@ -23,3 +23,8 @@ def atomic_write(path: str | os.PathLike, writer: Callable[[str], None]) -> None
             os.unlink(temporary)
         except FileNotFoundError:
             pass
+
+
+def atomic_write_bytes(path: str | os.PathLike, data: bytes) -> None:
+    """原子写入已经在内存中生成的二进制报告。"""
+    atomic_write(path, lambda temporary: Path(temporary).write_bytes(data))

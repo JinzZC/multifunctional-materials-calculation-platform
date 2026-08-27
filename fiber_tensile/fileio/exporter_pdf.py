@@ -11,6 +11,7 @@ from datetime import datetime
 from ..core.models import MODE_LABELS
 from ..core.modes import get_mode_spec
 from ..core.weibull import rank_method_label
+from .atomic import atomic_write_bytes
 
 _CJK = "STSong-Light"
 
@@ -58,8 +59,9 @@ def export_pdf_report(path, batch, analysis=None, weibull=None) -> None:
 
     spec = get_mode_spec(batch.mode)
     unit = spec.strength_unit
+    pdf_buffer = BytesIO()
     doc = SimpleDocTemplate(
-        str(path), pagesize=A4,
+        pdf_buffer, pagesize=A4,
         leftMargin=2 * cm, rightMargin=2 * cm, topMargin=2 * cm, bottomMargin=2 * cm,
         title=f"纤维拉伸强度分析报告 - {batch.batch_name}",
     )
@@ -149,3 +151,4 @@ def export_pdf_report(path, batch, analysis=None, weibull=None) -> None:
                        repeatRows=1, style=detail_style))
 
     doc.build(story)
+    atomic_write_bytes(path, pdf_buffer.getvalue())

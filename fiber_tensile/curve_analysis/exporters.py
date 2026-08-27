@@ -2,7 +2,7 @@
 
 from datetime import datetime
 from ..fileio.excel_safe import set_cell_value
-from ..fileio.atomic import atomic_write
+from ..fileio.atomic import atomic_write, atomic_write_bytes
 
 
 def _build_rows(sample_name, diameter_um, gauge_mm, result, remark, test_date):
@@ -106,7 +106,8 @@ def export_pdf_report(path, sample_name, diameter_um, gauge_mm, result,
 
     info, results, steps = _build_rows(sample_name, diameter_um, gauge_mm,
                                        result, remark, test_date)
-    doc = SimpleDocTemplate(str(path), pagesize=A4,
+    pdf_buffer = BytesIO()
+    doc = SimpleDocTemplate(pdf_buffer, pagesize=A4,
                             leftMargin=2 * cm, rightMargin=2 * cm,
                             topMargin=2 * cm, bottomMargin=2 * cm,
                             title=f"单丝拉伸曲线分析报告 - {sample_name}")
@@ -129,3 +130,4 @@ def export_pdf_report(path, sample_name, diameter_um, gauge_mm, result,
     for line in steps:
         story.append(p(line))
     doc.build(story)
+    atomic_write_bytes(path, pdf_buffer.getvalue())

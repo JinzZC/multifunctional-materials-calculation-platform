@@ -2,7 +2,7 @@
 
 from datetime import datetime
 from ..fileio.excel_safe import set_cell_value
-from ..fileio.atomic import atomic_write
+from ..fileio.atomic import atomic_write, atomic_write_bytes
 
 _TYPE_LABELS = {"rom": "单层板工程常数（混合法则）", "volume_fraction": "纤维体积分数/孔隙率"}
 
@@ -54,6 +54,8 @@ def export_excel_report(path, calc_type, sample_name, inputs,
 
 def export_pdf_report(path, calc_type, sample_name, inputs,
                       result_pairs, steps, remark=None, test_date=None) -> None:
+    from io import BytesIO
+
     from reportlab.lib import colors
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.styles import ParagraphStyle
@@ -84,7 +86,8 @@ def export_pdf_report(path, calc_type, sample_name, inputs,
 
     info, input_rows, result_pairs, steps = _build_sections(
         calc_type, sample_name, inputs, steps, result_pairs, remark, test_date)
-    doc = SimpleDocTemplate(str(path), pagesize=A4,
+    pdf_buffer = BytesIO()
+    doc = SimpleDocTemplate(pdf_buffer, pagesize=A4,
                             leftMargin=2 * cm, rightMargin=2 * cm,
                             topMargin=2 * cm, bottomMargin=2 * cm,
                             title=f"复合材料基础计算报告 - {sample_name}")
@@ -100,3 +103,4 @@ def export_pdf_report(path, calc_type, sample_name, inputs,
     for line in steps:
         story.append(p(line))
     doc.build(story)
+    atomic_write_bytes(path, pdf_buffer.getvalue())
