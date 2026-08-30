@@ -229,5 +229,3 @@ tests/                   pytest 单元测试（222 个用例）
 ## 开源许可
 
 项目源代码采用 [MIT License](LICENSE)。第三方依赖和界面资源按各自声明与许可使用；MIT License 不改变这些第三方内容的许可条件。
-
-**扩展指南**：新增计算模式 → `core/modes.py` 注册表加一条 `ModeSpec` + `core/formulas.py` 写公式函数，录入表单/导入校验/报告列自动适配；新增功能域（如 EMI）→ 加迁移建表 + 独立模块 + 新 Tab。
