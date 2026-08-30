@@ -1,7 +1,16 @@
 # 多功能计算平台
 
+![Python 3.14](https://img.shields.io/badge/Python-3.14-3776AB)
+![Windows](https://img.shields.io/badge/Platform-Windows%2010%2F11-0078D4)
+![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)
+![Tests](https://img.shields.io/badge/tests-222%20passed-brightgreen)
+
 面向材料测试的多功能 Windows 桌面计算平台（Python + PySide6，中文界面），
 左侧导航栏在功能模块间切换，当前包含五个模块。
+
+当前稳定版本：**v0.4.1**。源码运行、测试与打包均以 Windows 10/11 64 位和 Python 3.14 为目标环境。可执行文件建议通过 GitHub Releases 发布，不直接提交到 Git 仓库。
+
+> **科学计算声明：** 本软件用于科研与工程数据辅助分析，不能替代适用的国家标准、行业标准、仪器校准、实验室质量体系、认证试验或专业判断。关键结论应结合原始数据、单位、试验条件和独立软件复核。
 
 **界面外观**
 
@@ -89,6 +98,8 @@
 
 ## 安装与运行
 
+### 从源码运行
+
 ```bat
 :: 1. 安装依赖（Python 3.14，需联网）
 py -3 -m pip install -r requirements.txt
@@ -98,6 +109,10 @@ py -3 main.py
 ```
 
 数据保存在 `%LOCALAPPDATA%\FiberTensile\fiber_tensile.db`（可用环境变量 `FT_DB_PATH` 覆盖）。
+
+### 使用发布版
+
+在 GitHub 仓库的 **Releases** 页面下载文件夹版 ZIP 或单文件版 EXE。文件夹版启动更快，推荐日常使用；单文件版更便携，但首次启动和每次自解压需要更长时间。
 
 ## 使用流程
 
@@ -151,6 +166,16 @@ py -3 main.py
 | F = 10 cN，Tt = 2 dtex（纺织） | 5 cN/dtex |
 | 5 cN/dtex，ρ = 1.14 g/cm³ | 570 MPa |
 
+## 公式来源与适用范围
+
+- 单丝拉伸强度参考 GB/T 31290、ASTM C1557 中的截面积与拉伸应力定义。
+- 纺织纤维断裂强度参考 GB/T 14337 的线密度强度表达。
+- 复合材料酸解数据处理参考 ASTM D3171；具体试剂、程序和适用材料范围仍以正式标准文本为准。
+- 表面能模块实现 OWRK、Wu、Fowkes 与 Zisman 常用模型。不同模型的假设不同，液体参数、表面粗糙度、化学非均匀性和接触角滞后均可能影响结果。
+- Weibull 模数取决于排序概率、拟合方法、样本量和异常值处理；与其他软件比较时必须保持这些设置一致。
+
+项目不分发标准全文。使用者应通过合法渠道获取适用标准，并确认版本、试样制备和实验条件。
+
 ## 测试
 
 ```bat
@@ -186,6 +211,13 @@ py -3 scripts/smoke_ui.py
 - 个别杀毒软件可能误报（PyInstaller 打包程序的常见现象），加入白名单即可
 - 数据保存在**每台电脑自己的** `%LOCALAPPDATA%\FiberTensile` 目录；若要把测试数据一并分享，用「批量导入/导出」的 Excel 文件传递
 
+## 数据与隐私
+
+- 默认数据库、自动备份、日志和界面偏好均存放在用户本机，不会自动上传。
+- Git 仓库忽略数据库、备份、日志、诊断包、测试输出和构建产物。
+- 诊断包只包含软件环境、数据库表记录数量和最近日志，不包含数据库文件或样品原始记录；分享前仍建议人工检查。
+- 不要在 GitHub Issue 中上传包含真实姓名、未公开样品信息或单位内部数据的文件。
+
 ## 常见问题
 
 - **启动慢**：单文件版每次启动都要自解压（正常现象），改用文件夹版可 1-3 秒启动。
@@ -217,7 +249,17 @@ scripts/
 ├── generate_test_data.py  随机测试数据生成（参数化，--skip-db 不入库）
 ├── build.bat            一键双打包（文件夹版 + 单文件版）
 ├── verify_exe.ps1 / measure_startup.ps1  打包验证与启动测速（用临时库，不碰真实数据）
-tests/                   pytest 单元测试（187 个用例）
+tests/                   pytest 单元测试（222 个用例）
 ```
+
+## 参与贡献
+
+提交 Issue 或 Pull Request 前请阅读 [CONTRIBUTING.md](CONTRIBUTING.md)。安全问题请按 [SECURITY.md](SECURITY.md) 私密报告。版本变化记录见 [CHANGELOG.md](CHANGELOG.md)，第三方依赖声明见 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+
+科研引用信息位于 [CITATION.cff](CITATION.cff)。除引用本软件外，请同时引用实际使用方法的原始文献或标准。
+
+## 开源许可
+
+项目源代码采用 [MIT License](LICENSE)。第三方依赖和界面资源按各自声明与许可使用；MIT License 不改变这些第三方内容的许可条件。
 
 **扩展指南**：新增计算模式 → `core/modes.py` 注册表加一条 `ModeSpec` + `core/formulas.py` 写公式函数，录入表单/导入校验/报告列自动适配；新增功能域（如 EMI）→ 加迁移建表 + 独立模块 + 新 Tab。

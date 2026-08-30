@@ -1,0 +1,23 @@
+name: 功能建议
+description: 建议新的计算方法、导入能力或交互改进
+title: "[Feature] "
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: scenario
+    attributes:
+      label: 使用场景
+      description: 当前工作流程中遇到了什么问题？
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 建议方案
+    validations:
+      required: true
+  - type: textarea
+    id: references
+    attributes:
+      label: 公式、标准或参考文献
+      description: 涉及科学计算时，请给出公式、单位、适用条件和公开来源。

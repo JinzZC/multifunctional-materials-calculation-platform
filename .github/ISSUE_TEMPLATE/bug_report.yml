@@ -1,0 +1,48 @@
+name: 错误报告
+description: 报告可复现的软件、导入或计算问题
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: 请先移除真实姓名、未公开样品信息和单位内部数据。
+  - type: input
+    id: version
+    attributes:
+      label: 软件版本
+      placeholder: 例如 v0.4.1，文件夹版或单文件版
+    validations:
+      required: true
+  - type: dropdown
+    id: module
+    attributes:
+      label: 功能模块
+      options:
+        - 纤维拉伸强度
+        - 接触角表面能
+        - 单丝曲线
+        - 复合材料
+        - 表格提取合并
+        - 统一批量计算中心
+        - 启动、打包或其他
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      description: 请写明输入单位、计算方法、排序概率、拟合方法和操作顺序。
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期望结果与实际结果
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: 脱敏日志或诊断信息
+      description: 可粘贴日志；不要公开上传数据库或敏感原始数据。
+      render: shell

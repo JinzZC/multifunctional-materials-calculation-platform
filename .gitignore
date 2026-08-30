@@ -14,3 +14,23 @@ test_data/
 
 # 日志
 *.log
+
+# 本地数据库、在线备份与诊断包（严禁提交真实测试数据）
+*.db
+*.db-shm
+*.db-wal
+backups/
+*诊断包*.zip
+
+# 本地工具配置
+.vscode/
+.idea/
+*.ini
+
+# 仅供本地开发代理使用
+AGENTS.md
+CLAUDE.md
+
+# 原始大图已压缩并收录到 fiber_tensile/assets/
+/3.jpg
+/File Nov 08, 17 51 21.png

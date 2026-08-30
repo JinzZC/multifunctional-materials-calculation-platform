@@ -1,0 +1,9 @@
+cff-version: 1.2.0
+message: "如果本软件对您的研究有帮助，请引用本项目及所使用计算方法的原始文献或标准。"
+title: "多功能计算平台"
+type: software
+authors:
+  - family-names: "jinze"
+version: 0.4.1
+date-released: 2026-08-30
+license: MIT
