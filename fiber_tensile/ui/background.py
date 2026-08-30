@@ -16,8 +16,8 @@ from . import prefs
 
 BUILTIN_BACKGROUNDS = (
     ("低干扰材料科学（推荐）", "science", "default_background.png"),
-    ("霞光星海", "sunset", "background_sunset.jpg"),
-    ("云海湖畔", "sky_lake", "background_sky_lake.jpg"),
+    ("碳纤维场域", "sunset", "background_carbon_field.jpg"),
+    ("界面润湿微观结构", "sky_lake", "background_interface_energy.jpg"),
 )
 _BUILTIN_FILES = {key: filename for _, key, filename in BUILTIN_BACKGROUNDS}
 
