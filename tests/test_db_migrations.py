@@ -47,15 +47,16 @@ def test_legacy_database_is_adopted_without_data_loss(tmp_path):
 
 def test_new_migration_script_is_applied(monkeypatch, tmp_path):
     """模拟未来追加迁移：只应用未执行的新版本。"""
-    v4_script = "CREATE TABLE IF NOT EXISTS emi_evaluations (id INTEGER PRIMARY KEY);"
-    monkeypatch.setattr(db_module, "MIGRATIONS", MIGRATIONS + [(4, v4_script)])
+    next_version = MIGRATIONS[-1][0] + 1
+    future_script = "CREATE TABLE IF NOT EXISTS future_evaluations (id INTEGER PRIMARY KEY);"
+    monkeypatch.setattr(db_module, "MIGRATIONS", MIGRATIONS + [(next_version, future_script)])
 
     conn = open_database(str(tmp_path / "c.db"))
     try:
-        assert get_schema_version(conn) == 4
+        assert get_schema_version(conn) == next_version
         tables = {r["name"] for r in conn.execute(
             "SELECT name FROM sqlite_master WHERE type='table'")}
-        assert "emi_evaluations" in tables
+        assert "future_evaluations" in tables
         assert "se_measurements" in tables      # v2 也一并应用
         assert "fiber_curves" in tables         # v3 也一并应用
     finally:
@@ -71,11 +72,12 @@ def test_existing_database_upgraded_when_new_version_added(monkeypatch, tmp_path
     assert get_schema_version(conn) == MIGRATIONS[-1][0]
     conn.close()
 
-    v4_script = "CREATE TABLE IF NOT EXISTS emi_evaluations (id INTEGER PRIMARY KEY);"
-    monkeypatch.setattr(db_module, "MIGRATIONS", MIGRATIONS + [(4, v4_script)])
+    next_version = MIGRATIONS[-1][0] + 1
+    future_script = "CREATE TABLE IF NOT EXISTS future_evaluations (id INTEGER PRIMARY KEY);"
+    monkeypatch.setattr(db_module, "MIGRATIONS", MIGRATIONS + [(next_version, future_script)])
     conn = open_database(path)
     try:
-        assert get_schema_version(conn) == 4
+        assert get_schema_version(conn) == next_version
         assert conn.execute("SELECT COUNT(*) AS c FROM batches").fetchone()["c"] == 1
         backups = list((tmp_path / "backups").glob("d-迁移前-*.db"))
         assert len(backups) == 1
@@ -87,7 +89,8 @@ def test_failed_migration_rolls_back_schema_and_version(monkeypatch, tmp_path):
     """迁移中途失败时，新表和版本标记必须一起回滚。"""
     broken = ("CREATE TABLE half_applied (id INTEGER PRIMARY KEY);"
               "INSERT INTO table_that_does_not_exist VALUES (1);")
-    monkeypatch.setattr(db_module, "MIGRATIONS", MIGRATIONS + [(4, broken)])
+    next_version = MIGRATIONS[-1][0] + 1
+    monkeypatch.setattr(db_module, "MIGRATIONS", MIGRATIONS + [(next_version, broken)])
     path = str(tmp_path / "atomic.db")
     with pytest.raises(sqlite3.OperationalError):
         open_database(path)
@@ -99,6 +102,6 @@ def test_failed_migration_rolls_back_schema_and_version(monkeypatch, tmp_path):
         versions = {row[0] for row in raw.execute(
             "SELECT version FROM schema_migrations")}
         assert "half_applied" not in tables
-        assert 4 not in versions
+        assert next_version not in versions
     finally:
         raw.close()

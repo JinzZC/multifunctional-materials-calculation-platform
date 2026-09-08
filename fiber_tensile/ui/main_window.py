@@ -23,6 +23,7 @@ from ..composites.ui import CompositesTab
 from ..batch_center.ui import BatchCenterTab
 from ..config import APP_NAME, APP_VERSION, asset_path, default_db_path
 from ..curve_analysis.ui import CurveAnalysisTab
+from ..mechanical.ui import MechanicalTab
 from ..data.maintenance import backup_database, suggested_backup_name
 from ..excel_merger.ui import ExcelMergerTab
 from ..fileio.diagnostics import create_diagnostic_zip
@@ -91,6 +92,8 @@ class MainWindow(QMainWindow):
         self._nav.addItem(QListWidgetItem("统一批量计算中心"))
         self._nav.item(4).setToolTip(
             "批量校验、计算并保存纤维强度、接触角表面能和单丝曲线文件")
+        self._nav.addItem(QListWidgetItem("通用力学曲线模块"))
+        self._nav.item(5).setToolTip("通用拉伸曲线分析，拟合区间调整、批量对比与报告")
         root.addWidget(self._nav)
 
         # ---- 右侧堆叠页面 ----
@@ -131,6 +134,9 @@ class MainWindow(QMainWindow):
         self.batch_center_tab = BatchCenterTab(self._db_path)
         self.batch_center_tab.data_changed.connect(self._on_batch_center_changed)
         self._stack.addWidget(self.batch_center_tab)
+
+        self.mechanical_tab = MechanicalTab(conn)
+        self._stack.addWidget(self.mechanical_tab)
 
         root.addWidget(self._stack, 1)
         self.setCentralWidget(central)
@@ -241,6 +247,7 @@ class MainWindow(QMainWindow):
             "· 复合材料基础计算模块：工程常数、体积分数与孔隙率<br>"
             "· 表格数据提取合并模块：Excel/CSV/TXT/TSV 扫描、样品排序与来源追踪<br><br>"
             "· 统一批量计算中心：多文件校验、计算、取消、错误审计与日志导出<br><br>"
+            "· 通用力学曲线：拉伸、可调拟合区间、曲线对比与历史保存<br><br>"
             "支持可配置批量导入、Excel/PDF 报告导出、每日自动备份、全局搜索、"
             "录入草稿恢复与诊断包。")
 
@@ -260,6 +267,15 @@ class MainWindow(QMainWindow):
         self.curve_tab.refresh_history()
 
     def closeEvent(self, event) -> None:
+        if not self.mechanical_tab.shutdown():
+            QMessageBox.warning(self, "暂时无法退出", "力学曲线导入尚未停止，请稍后再关闭。")
+            event.ignore()
+            return
+        if self.mechanical_tab.has_unsaved():
+            if QMessageBox.question(self, "力学曲线未保存", "通用力学曲线中有未保存结果，仍然退出？",
+                                    QMessageBox.Yes | QMessageBox.No, QMessageBox.No) != QMessageBox.Yes:
+                event.ignore()
+                return
         if self.entry_tab.has_pending_data():
             answer = QMessageBox.question(
                 self, "存在未保存数据",

@@ -17,6 +17,9 @@ class SearchResult:
 
 
 _QUERIES = (
+    ("通用力学曲线", 5,
+     "SELECT id, sample_name title, mode || '；' || remark detail, created_at "
+     "FROM mechanical_curves WHERE mode='tensile' AND (sample_name LIKE ? OR remark LIKE ? OR test_date LIKE ?)"),
     ("纤维拉伸强度", 0,
      "SELECT id, batch_name title, "
      "COALESCE(fiber_type,'') || CASE WHEN remark IS NULL OR remark='' THEN '' ELSE '；' || remark END detail, "
@@ -34,7 +37,7 @@ _QUERIES = (
 
 
 def search_all(conn: sqlite3.Connection, keyword: str, limit: int = 200) -> list[SearchResult]:
-    """搜索四个数据库功能域，按创建时间倒序合并。"""
+    """搜索数据库功能域，按创建时间倒序合并。"""
     text = keyword.strip()
     if not text:
         return []

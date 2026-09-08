@@ -10,14 +10,16 @@ import tempfile
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+from scripts.test_environment import isolated_environment
+
+# Enter before importing application modules, including their default paths.
+_environment = isolated_environment()
+_test_root = _environment.__enter__()
+
 import math
 
-from PySide6.QtCore import QSettings, QTimer
+from PySide6.QtCore import QTimer
 from PySide6.QtWidgets import QApplication, QComboBox, QMessageBox, QTableWidgetItem
-
-# 界面偏好隔离到临时 ini，避免污染真实用户设置
-QSettings.setDefaultFormat(QSettings.IniFormat)
-QSettings.setPath(QSettings.IniFormat, QSettings.UserScope, tempfile.gettempdir())
 
 # 冒烟测试中自动确认所有弹窗，避免阻塞
 QMessageBox.information = staticmethod(lambda *a, **k: QMessageBox.Ok)
@@ -39,8 +41,6 @@ from fiber_tensile.ui import prefs
 def main() -> int:
     app = QApplication(sys.argv)
     tmp_db = os.path.join(tempfile.gettempdir(), "fiber_smoke.db")
-    if os.path.exists(tmp_db):
-        os.remove(tmp_db)
     # 日志与数据库同目录
     import logging
     log_path = setup_logging(tmp_db)
@@ -253,19 +253,20 @@ def main() -> int:
     st._radio_methods["owrk"].setChecked(True)
     assert not st._figure_pane.isVisible()
 
-    # 9. 模块导航栏：五个模块可切换并记忆，模块名过长自动换行
-    assert win._nav.count() == 5
+    # 9. 模块导航栏：六个模块可切换并记忆，模块名过长自动换行
+    assert win._nav.count() == 6
     assert win._nav.item(0).text() == "纤维拉伸强度分析模块"
     assert win._nav.item(1).text() == "接触角表面能模块"
     assert win._nav.item(2).text() == "复合材料基础计算模块"
     assert win._nav.item(3).text() == "表格数据提取合并模块"
     assert win._nav.item(4).text() == "统一批量计算中心"
+    assert win._nav.item(5).text() == "通用力学曲线模块"
     assert "多功能计算平台" in win.windowTitle()
     assert win._nav.wordWrap() is True
     # 各模块界面区块之间有可拖拽分隔条（QSplitter）
     from PySide6.QtWidgets import QSplitter
     for tab in (win.entry_tab, win.analysis_tab, win.history_tab, win.surface_tab,
-                win.composites_tab, win.excel_merger_tab, win.batch_center_tab):
+                win.composites_tab, win.excel_merger_tab, win.batch_center_tab, win.mechanical_tab):
         assert tab.findChild(QSplitter) is not None, type(tab).__name__
 
     # 9b. Excel 合并模块：扫描两个工作簿，在线程中按表头对齐并生成预览
@@ -350,10 +351,61 @@ def main() -> int:
     prefs.set_last_module(1)
     assert prefs.last_module() == 1
 
-    print("SMOKE OK：录入/统计/Weibull/历史/日志/偏好/表面能/模块导航 全部通过")
+    # 12. 通用力学：后台导入、错误隔离、重算、保存、历史加载及报告。
+    from pathlib import Path
+    from fiber_tensile.mechanical.exporters import export_excel
+    mt = win.mechanical_tab
+    win._nav.setCurrentRow(5)
+    paths = []
+    for name, modulus in (("树脂-A", 3000), ("树脂-B", 3200)):
+        path = Path(tempfile.gettempdir()) / f"{name}.csv"
+        path.write_text("strain(%),force(N)\n" + "\n".join(
+            f"{i / 100},{modulus * (i / 10000) * 20}" for i in range(201)), encoding="utf-8")
+        paths.append(str(path))
+    broken = Path(tempfile.gettempdir()) / "invalid.csv"
+    broken.write_text("wrong,columns\n1,2", encoding="utf-8")
+    mt.start_import([paths[0], str(broken), paths[1]], {"x_unit": "%", "force_unit": "N"})
+    mechanical_loop = QEventLoop()
+    mt._thread.finished.connect(mechanical_loop.quit)
+    mechanical_loop.exec()
+    app.processEvents()
+    assert len(mt._entries) == 2
+    assert "失败：invalid.csv" in mt._log.toPlainText()
+    mt._table.selectRow(0)
+    assert abs(mt._entries[0]["result"].modulus_gpa - 3) < 1e-10
+    mt._lo.setValue(.08)
+    assert mt._dirty and not mt._save_button.isEnabled()
+    mt._recalculate()
+    assert not mt._dirty
+    assert mt._entries[0]["spec"].fit_lo == .08
+    mt._table.selectAll()
+    assert len(mt._selected()) == 2
+    mt._save()
+    assert len(mt._history_rows) == 2
+    assert not mt.has_unsaved()
+    export_excel(Path(tempfile.gettempdir()) / "mechanical.xlsx", mt._entries)
+    app.processEvents()
+    screenshot = os.environ.get("FT_SMOKE_SCREENSHOT")
+    if screenshot:
+        win.grab().save(screenshot)
+    mt._entries.clear()
+    mt._render_table()
+    mt._history.selectAll()
+    mt._load_history()
+    assert len(mt._entries) == 2 and not mt.has_unsaved()
+
+    print("SMOKE OK：录入/统计/Weibull/历史/日志/偏好/表面能/模块导航/通用力学 全部通过")
     QTimer.singleShot(300, app.quit)
-    return app.exec()
+    result = app.exec()
+    win.close()
+    conn.close()
+    return result
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    try:
+        sys.exit(main())
+    finally:
+        import logging
+        logging.shutdown()
+        _environment.__exit__(None, None, None)

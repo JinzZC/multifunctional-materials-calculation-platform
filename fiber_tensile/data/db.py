@@ -129,10 +129,29 @@ CREATE TABLE IF NOT EXISTS cm_calcs (
     created_at   TEXT    NOT NULL DEFAULT (datetime('now','localtime'))
 );
 """
+_SCHEMA_V4 = """
+CREATE TABLE IF NOT EXISTS mechanical_curves (
+    id INTEGER PRIMARY KEY,
+    sample_name TEXT NOT NULL,
+    mode TEXT NOT NULL,
+    source TEXT NOT NULL,
+    spec_json TEXT NOT NULL,
+    points_json TEXT NOT NULL,
+    import_json TEXT NOT NULL,
+    result_json TEXT NOT NULL,
+    app_version TEXT NOT NULL,
+    algorithm_version TEXT NOT NULL,
+    remark TEXT NOT NULL DEFAULT '',
+    test_date TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
+"""
+
 MIGRATIONS: list[tuple[int, str]] = [
     (1, _SCHEMA_V1),
     (2, _SCHEMA_V2),
     (3, _SCHEMA_V3),
+    (4, _SCHEMA_V4),
 ]
 
 

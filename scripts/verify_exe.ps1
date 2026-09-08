@@ -1,32 +1,33 @@
-# Verify the packaged EXE: launch it against a TEMP database (never touches
-# the user's real data), confirm it stays alive, then close.
-# The folder-version EXE is auto-discovered (dist\<folder>\<folder>.exe),
-# so this script stays ASCII-only and works with Chinese EXE names.
+# Verify both packaged variants against synthetic data and temporary settings.
+param([string]$ExePath)
 $ErrorActionPreference = 'Stop'
-$folderExe = $null
-foreach ($dir in Get-ChildItem -Path 'dist' -Directory) {
-    $candidate = Get-ChildItem -Path $dir.FullName -Filter '*.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
-    if ($candidate) { $folderExe = $candidate.FullName; break }
+$executables = @()
+if ($ExePath) {
+    $executables = @((Resolve-Path -LiteralPath $ExePath).Path)
+} else {
+    foreach ($dir in Get-ChildItem -LiteralPath 'dist' -Directory) {
+        $candidate = Join-Path $dir.FullName ($dir.Name + '.exe')
+        if (Test-Path -LiteralPath $candidate) { $executables += $candidate }
+    }
+    $executables += @(Get-ChildItem -LiteralPath 'dist' -Filter '*.exe' -File | ForEach-Object { $_.FullName })
 }
-if (-not $folderExe) { Write-Output 'NO_EXE_FOUND'; exit 1 }
-Write-Output ("exe: " + $folderExe)
-$verifyRoot = Join-Path $env:TEMP ("fiber-verify-" + [guid]::NewGuid().ToString('N'))
+if ($executables.Count -eq 0) { throw 'NO_EXE_FOUND' }
+$verifyRoot = Join-Path $env:TEMP ('fiber-package-check-' + [guid]::NewGuid().ToString('N'))
 New-Item -ItemType Directory -Path $verifyRoot | Out-Null
-$verifyDb = Join-Path $verifyRoot 'fiber_verify.db'
-$env:FT_DB_PATH = $verifyDb          # child process inherits this
-$p = Start-Process -FilePath $folderExe -PassThru -WindowStyle Hidden
-Start-Sleep -Seconds 15
-$p.Refresh()
-$alive = -not $p.HasExited
-Write-Output ("process_alive: " + $alive)
-Write-Output ("window_title: " + $p.MainWindowTitle)
-if ($alive) {
-    Stop-Process -Id $p.Id -Force
-    Write-Output 'process_stopped'
-}
-$dbCreated = Test-Path $verifyDb
-Write-Output ("db_created: " + $dbCreated)
-Remove-Item Env:FT_DB_PATH -ErrorAction SilentlyContinue
-if (-not $alive -or -not $dbCreated -or $p.MainWindowTitle -eq 'Unhandled exception in script') {
-    exit 1
+foreach ($executable in $executables) {
+    $resultFile = Join-Path $verifyRoot ([guid]::NewGuid().ToString('N') + '.json')
+    $process = Start-Process -FilePath $executable -ArgumentList @('--verify-package', ('"' + $resultFile + '"')) -PassThru -WindowStyle Hidden
+    if (-not $process.WaitForExit(90000)) {
+        Stop-Process -Id $process.Id -Force
+        throw ('Verification timed out: ' + $executable)
+    }
+    if ($process.ExitCode -ne 0 -or -not (Test-Path -LiteralPath $resultFile)) {
+        throw ('Verification failed: ' + $executable)
+    }
+    $result = Get-Content -LiteralPath $resultFile -Raw | ConvertFrom-Json
+    if (-not $result.database_isolated -or -not $result.settings_isolated -or $result.navigation -ne 6 -or $result.exports.Count -ne 3) {
+        throw ('Incomplete verification: ' + $executable)
+    }
+    Write-Output ('VERIFIED: ' + $executable)
+    Get-Content -LiteralPath $resultFile
 }

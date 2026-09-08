@@ -13,7 +13,9 @@ _VALID_BACKGROUND_SOURCES = ("science", "sunset", "sky_lake", "custom")
 
 
 def _settings() -> QSettings:
-    return QSettings(_ORG, _APP)
+    # The organization/application overload always uses NativeFormat on Windows.
+    # Pass the configured format explicitly so tests can redirect to temporary INI.
+    return QSettings(QSettings.defaultFormat(), QSettings.UserScope, _ORG, _APP)
 
 
 def load_geometry():

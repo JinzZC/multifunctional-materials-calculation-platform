@@ -51,4 +51,8 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    if len(sys.argv) == 3 and sys.argv[1] == "--verify-package":
+        from fiber_tensile.package_check import run
+        sys.exit(run(sys.argv[2]))
+    else:
+        sys.exit(main())

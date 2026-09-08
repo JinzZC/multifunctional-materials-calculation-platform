@@ -15,7 +15,7 @@ from .core.modes import (  # noqa: F401 — 兼容旧导入路径
 )
 
 APP_NAME = "多功能计算平台"
-APP_VERSION = "0.4.1"
+APP_VERSION = "0.5.0"
 
 # 文件名非法字符（Windows）：报告默认文件名需清理，避免导出失败
 _INVALID_FILENAME_CHARS = set('\\/:*?"<>|')
