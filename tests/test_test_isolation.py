@@ -12,7 +12,7 @@ def test_default_database_and_settings_are_temporary():
     assert root.name.startswith("fiber-test-")
     path = Path(default_db_path()).resolve()
     assert path.is_relative_to(root)
-    assert Path(os.environ["LOCALAPPDATA"]).is_relative_to(root)
+    assert Path(os.environ["LOCALAPPDATA"]).resolve().is_relative_to(root)
     settings = _settings()
     assert Path(settings.fileName()).resolve().is_relative_to(root)
     conn = open_database(str(path))

@@ -10,7 +10,7 @@ from pathlib import Path
 def isolated_environment():
     # Some third-party libraries retain handles until process exit on Windows.
     with tempfile.TemporaryDirectory(prefix="fiber-test-", ignore_cleanup_errors=True) as folder:
-        root = Path(folder)
+        root = Path(folder).resolve()
         values = {
             "FT_DB_PATH": str(root / "default.db"),
             "LOCALAPPDATA": str(root / "local"),
