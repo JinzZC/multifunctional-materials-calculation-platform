@@ -10,7 +10,7 @@ from datetime import datetime
 
 from ..core.models import MODE_LABELS
 from ..core.modes import get_mode_spec
-from ..core.weibull import rank_method_label
+from ..core.weibull import rank_method_label, weibull_in_gpa, weibull_intercept, weibull_x_label
 from .atomic import atomic_write_bytes
 
 _CJK = "STSong-Light"
@@ -59,6 +59,13 @@ def export_pdf_report(path, batch, analysis=None, weibull=None) -> None:
 
     spec = get_mode_spec(batch.mode)
     unit = spec.strength_unit
+    weibull_error = "无法进行 Weibull 分析（至少需要 2 个有效且不完全相同的强度值）"
+    if weibull is not None:
+        try:
+            weibull = weibull_in_gpa(weibull, unit, batch.density)
+        except ValueError as exc:
+            weibull_error = str(exc)
+            weibull = None
     pdf_buffer = BytesIO()
     doc = SimpleDocTemplate(
         pdf_buffer, pagesize=A4,
@@ -110,21 +117,22 @@ def export_pdf_report(path, batch, analysis=None, weibull=None) -> None:
         kv_rows = [
             ["排序概率方法", rank_method_label(weibull.rank_method)],
             ["Weibull 模数 m", f"{weibull.m:.4f}"],
-            [f"特征强度 σ₀({unit})", f"{weibull.sigma0:.2f}"],
+            ["特征强度 σ₀(GPa)", f"{weibull.sigma0:.6g}"],
+            ["位置参数 γ(GPa)", f"{weibull.gamma:.6g}"],
+            ["横坐标 X", weibull_x_label(weibull)],
+            ["拟合直线 y = m·x+a", f"m = {weibull.m:.6g}，a = {weibull_intercept(weibull):.6g}"],
             ["拟合优度 R²", f"{weibull.r2:.4f}"],
         ]
-        if spec.uses_density and batch.density is not None:
-            kv_rows.append(["特征强度 σ₀(MPa)", f"{weibull.sigma0 * batch.density * 100:.2f}"])
         story.append(Table([[_p(k, body_style), _p(v, body_style)] for k, v in kv_rows],
                            colWidths=[5 * cm, 10 * cm], style=grid_style))
-        fig = build_weibull_figure([weibull], labels=[batch.batch_name], sigma0_unit=unit)
+        fig = build_weibull_figure([weibull], labels=[batch.batch_name], sigma0_unit="GPa")
         buf = BytesIO()
         fig.savefig(buf, format="png", dpi=150)
         plt.close(fig)
         story.append(Spacer(1, 0.4 * cm))
         story.append(Image(buf, width=15 * cm, height=11 * cm))
     else:
-        story.append(_p("数据不足（Weibull 分析至少需要 2 个数据点）", body_style))
+        story.append(_p(weibull_error, body_style))
 
     story.append(_p("四、数据明细", h2_style))
     dim_col = spec.dim_label

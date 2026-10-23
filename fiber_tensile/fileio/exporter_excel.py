@@ -1,11 +1,13 @@
-"""Excel 报告导出（openpyxl）：统计汇总 / 数据明细 / Weibull 分析数据 三个 sheet。
+"""Excel 报告导出：统计汇总 / 数据明细 / Weibull 散点 / Weibull 拟合直线。
 
 openpyxl/matplotlib 均为函数内延迟导入，避免拖慢应用启动。
 """
 
 from ..core.models import MODE_LABELS
 from ..core.modes import get_mode_spec
-from ..core.weibull import rank_method_label
+from ..core.weibull import (
+    rank_method_label, weibull_in_gpa, weibull_intercept, weibull_line_data, weibull_x_label,
+)
 from .excel_safe import set_cell_value
 from .atomic import atomic_write
 
@@ -66,6 +68,13 @@ def export_excel_report(path, batch, analysis=None, weibull=None) -> None:
     styles = _styles()
     spec = get_mode_spec(batch.mode)
     unit = spec.strength_unit
+    weibull_error = "无法进行 Weibull 分析（至少需要 2 个有效且不完全相同的强度值）"
+    if weibull is not None:
+        try:
+            weibull = weibull_in_gpa(weibull, unit, batch.density)
+        except ValueError as exc:
+            weibull_error = str(exc)
+            weibull = None
     wb = Workbook()
     ws = wb.active
     ws.title = "统计汇总"
@@ -120,14 +129,16 @@ def export_excel_report(path, batch, analysis=None, weibull=None) -> None:
         kv_rows = [
             ("排序概率方法", rank_method_label(weibull.rank_method)),
             ("Weibull 模数 m", round(weibull.m, 4)),
-            (f"特征强度 σ₀({unit})", round(weibull.sigma0, 2)),
+            ("特征强度 σ₀(GPa)", weibull.sigma0),
+            ("位置参数 γ(GPa)", weibull.gamma),
+            ("横坐标 X", weibull_x_label(weibull)),
+            ("拟合直线斜率 m", weibull.m),
+            ("拟合直线截距 a", weibull_intercept(weibull)),
             ("拟合优度 R²", round(weibull.r2, 4)),
         ]
-        if spec.uses_density and batch.density is not None:
-            kv_rows.append(("特征强度 σ₀(MPa)", round(weibull.sigma0 * batch.density * 100, 2)))
         for k, v in kv_rows:
             row = _write_kv(ws, row, k, v, styles)
-        fig = build_weibull_figure([weibull], labels=[batch.batch_name], sigma0_unit=unit)
+        fig = build_weibull_figure([weibull], labels=[batch.batch_name], sigma0_unit="GPa")
         buf = BytesIO()
         fig.savefig(buf, format="png", dpi=150)
         plt.close(fig)
@@ -136,7 +147,7 @@ def export_excel_report(path, batch, analysis=None, weibull=None) -> None:
         img.height = 470
         ws.add_image(img, "E2")
     else:
-        ws.cell(row, 1, "数据不足（Weibull 分析至少需要 2 个数据点）")
+        ws.cell(row, 1, weibull_error)
 
     # ---- Sheet2 数据明细 ----
     ws2 = wb.create_sheet("数据明细")
@@ -165,16 +176,53 @@ def export_excel_report(path, batch, analysis=None, weibull=None) -> None:
     # ---- Sheet3 Weibull 分析数据 ----
     if weibull is not None:
         ws3 = wb.create_sheet("Weibull 分析数据")
-        headers3 = ["序号 i", f"σ({unit})", f"F̂({rank_method_label(weibull.rank_method)})",
-                    "ln σ", "ln(−ln(1−F̂))"]
+        x_label = weibull_x_label(weibull)
+        intercept = weibull_intercept(weibull)
+        headers3 = ["序号 i", "σ(GPa)", f"F̂({rank_method_label(weibull.rank_method)})",
+                    x_label, "ln(−ln(1−F̂))", "拟合 Y = m·X+a"]
         rows3 = []
         for i, (s_val, f_hat, x, y) in enumerate(zip(
                 weibull.strengths_sorted, weibull.median_ranks,
                 weibull.x, weibull.y), start=1):
-            rows3.append([i, round(s_val, 2), round(f_hat, 6), round(x, 6), round(y, 6)])
+            rows3.append([i, s_val, f_hat, x, y, weibull.m * x + intercept])
         _write_table(ws3, 1, headers3, rows3, styles)
         ws3.freeze_panes = "A2"
-        for i, w in enumerate([8, 14, 16, 12, 18], start=1):
+        for i, w in enumerate([8, 20, 44, 24, 24, 24], start=1):
             ws3.column_dimensions[get_column_letter(i)].width = w
+        for cells in ws3.iter_rows(min_row=2, min_col=2):
+            for cell in cells:
+                cell.number_format = "0.0000000000"
+
+        # 独立的 X/Y 数值列，直接在 Origin 中指定 A(X)、B(Y) 后画线。
+        ws4 = wb.create_sheet("Weibull 拟合直线数据")
+        line_x, line_y = weibull_line_data(weibull)
+        _write_table(ws4, 1, [f"拟合 X = {x_label}", "拟合 Y = m·X+a"],
+                     list(zip(line_x, line_y)), styles)
+        ws4.freeze_panes = "A2"
+        for column in ("A", "B"):
+            ws4.column_dimensions[column].width = 28
+        for cells in ws4.iter_rows(min_row=2, max_col=2):
+            for cell in cells:
+                cell.number_format = "0.0000000000"
+        parameters = [
+            ("横坐标 X", x_label),
+            ("纵坐标 Y", "ln(−ln(1−F))"),
+            ("斜率 m", weibull.m),
+            ("截距 a", intercept),
+            ("尺度参数 σ₀(GPa)", weibull.sigma0),
+            ("位置参数 γ(GPa)", weibull.gamma),
+            ("拟合优度 R²", weibull.r2),
+            ("排序概率方法", rank_method_label(weibull.rank_method)),
+            ("拟合直线点数", len(line_x)),
+            ("绘图范围", "散点 X 最小值至最大值，X 等间距"),
+            ("Origin 绘图", "本表 A/B 列画拟合线；分析数据表 D/E 列画散点，均用线性坐标轴。"),
+        ]
+        for r, (key, value) in enumerate(parameters, start=1):
+            ws4.cell(r, 4, key).font = styles[1]
+            cell = set_cell_value(ws4.cell(r, 5), value)
+            if isinstance(value, float):
+                cell.number_format = "0.0000000000"
+        ws4.column_dimensions["D"].width = 24
+        ws4.column_dimensions["E"].width = 82
 
     atomic_write(path, wb.save)

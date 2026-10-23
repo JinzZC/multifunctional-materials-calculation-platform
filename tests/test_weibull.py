@@ -12,6 +12,10 @@ from fiber_tensile.core.weibull import (
     weibull_fit,
     weibull_fit_3p,
     weibull_fit_mle,
+    weibull_in_gpa,
+    weibull_intercept,
+    weibull_line_data,
+    weibull_x_label,
 )
 
 
@@ -220,3 +224,52 @@ def test_mle_and_3p_reject_constant_data():
     for fit in (weibull_fit_mle, weibull_fit_3p):
         with pytest.raises(ValueError, match="全部相等"):
             fit([5.0, 5.0, 5.0])
+
+
+@pytest.mark.parametrize("fit", [weibull_fit, weibull_fit_mle, weibull_fit_3p])
+@pytest.mark.parametrize("rank_method", ["hazen", "mean_rank", "benard", "blom"])
+def test_gpa_conversion_preserves_fit_and_probability(fit, rank_method):
+    raw = fit([1800.123456789, 2200.0, 2700.0, 3000.0, 3500.0], rank_method)
+    gpa = weibull_in_gpa(raw)
+    assert gpa.strength_unit == "GPa"
+    assert gpa.m == raw.m and gpa.r2 == raw.r2
+    assert gpa.median_ranks == raw.median_ranks and gpa.y == raw.y
+    assert gpa.sigma0 == pytest.approx(raw.sigma0 / 1000)
+    assert gpa.gamma == pytest.approx(raw.gamma / 1000)
+    assert gpa.x == pytest.approx(np.log((np.asarray(raw.strengths_sorted) - raw.gamma) / 1000))
+    assert weibull_intercept(gpa) == pytest.approx(weibull_intercept(raw) + raw.m * math.log(1000))
+    assert weibull_in_gpa(gpa) is gpa  # 导出已换算结果时不得重复除以 1000
+    assert raw.strength_unit == "" and raw.strengths_sorted[0] > 1000  # 不改写原结果
+    x, y = weibull_line_data(gpa)
+    assert len(x) == len(y) == 100
+    assert x[0] == gpa.x[0] and x[-1] == gpa.x[-1]
+    assert np.diff(x) == pytest.approx([x[1] - x[0]] * 99)
+    # 直线上的任意点应还原同一 Weibull CDF，而非连接原始散点。
+    strength = np.exp(x)
+    expected_cdf = -np.expm1(-(strength / gpa.sigma0) ** gpa.m)
+    assert -np.expm1(-np.exp(y)) == pytest.approx(expected_cdf)
+
+
+def test_textile_gpa_conversion_requires_density():
+    raw = weibull_fit([5.0, 6.0, 7.0])
+    gpa = weibull_in_gpa(raw, "cN/dtex", 1.38)
+    assert gpa.strengths_sorted == pytest.approx([0.69, 0.828, 0.966])
+    assert gpa.x == pytest.approx(np.log([0.69, 0.828, 0.966]))
+    for density in (None, 0, -1, float("nan"), float("inf")):
+        with pytest.raises(ValueError, match="密度"):
+            weibull_in_gpa(raw, "cN/dtex", density)
+
+
+def test_shifted_gpa_axis_and_line():
+    from fiber_tensile.core.models import WeibullResult
+
+    raw = WeibullResult(m=2.0, sigma0=3000.0, gamma=500.0, r2=1.0,
+                        strengths_sorted=[1500.0, 2500.0], median_ranks=[0.1, 0.5],
+                        x=[math.log(1000), math.log(2000)], y=[-2.25, -0.36])
+    gpa = weibull_in_gpa(raw)
+    assert gpa.gamma == 0.5
+    assert weibull_x_label(gpa) == "ln((σ−γ)/GPa)"
+    assert gpa.x == pytest.approx([0.0, math.log(2.0)])
+    x, y = weibull_line_data(gpa, 2)
+    assert x == pytest.approx([0.0, math.log(2.0)])
+    assert y == pytest.approx([-2 * math.log(3), 2 * math.log(2 / 3)])

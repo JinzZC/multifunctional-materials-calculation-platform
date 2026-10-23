@@ -12,10 +12,12 @@ from PySide6.QtWidgets import (
 )
 
 from ..config import sanitize_filename
-from ..core.models import MODE_FILAMENT, MODE_LABELS, Batch
-from ..core.modes import get_mode_spec, strength_unit_label
+from ..core.models import MODE_LABELS, Batch
+from ..core.modes import strength_unit_label
 from ..core.statistics import batch_statistics
-from ..core.weibull import RANK_METHODS, weibull_fit, weibull_fit_3p, weibull_fit_mle
+from ..core.weibull import (
+    RANK_METHODS, weibull_fit, weibull_fit_3p, weibull_fit_mle, weibull_in_gpa,
+)
 from ..data.repository import get_batch, get_strengths, list_batches
 from . import prefs
 
@@ -159,6 +161,7 @@ class AnalysisTab(QWidget):
 
         bottom = QHBoxLayout()
         self._btn_excel = QPushButton("导出 Excel 报告…")
+        self._btn_excel.setToolTip("包含 GPa 单位的 Weibull 散点及 100 点拟合直线数据，可用于 Origin 绘图。")
         self._btn_pdf = QPushButton("导出 PDF 报告…")
         self._btn_excel.setEnabled(False)
         self._btn_pdf.setEnabled(False)
@@ -254,11 +257,8 @@ class AnalysisTab(QWidget):
                         strengths: list, unit: str) -> None:
         """按所选拟合方法（最小二乘/MLE/三参数）计算并展示 Weibull 结果。
 
-        单丝模式按 GPa 单位拟合（横轴为 ln(σ_GPa)），纺织保持 cN/dtex。
+        按原始单位拟合后统一换算为 GPa，与报告及拟合直线数据一致。
         """
-        if mode == MODE_FILAMENT:
-            strengths = [s / 1000.0 for s in strengths]   # MPa → GPa
-            unit = "GPa"
         method = self._combo_wfit.currentData()
         rank_method = self._combo_rank.currentData()
         try:
@@ -268,6 +268,7 @@ class AnalysisTab(QWidget):
                 w = weibull_fit_3p(strengths, rank_method)
             else:
                 w = weibull_fit(strengths, rank_method)
+            w = weibull_in_gpa(w, unit, density)
         except ValueError as e:
             self._lbl_m.setText("Weibull 模数 m：—")
             self._lbl_sigma0.setText("特征强度 σ₀：—")
@@ -281,19 +282,12 @@ class AnalysisTab(QWidget):
         self._ensure_canvas()
         self._weibull_error = None
         self._lbl_m.setText(f"Weibull 模数 m = {w.m:.4f}")
-        if mode == MODE_FILAMENT:
-            sigma0_text = f"特征强度 σ₀ = {w.sigma0:.4f} GPa"
-            if w.gamma > 0:
-                sigma0_text += f"　位置参数 γ = {w.gamma:.4f} GPa"
-        else:
-            sigma0_text = f"特征强度 σ₀ = {w.sigma0:.2f} {unit}"
-            if w.gamma > 0:
-                sigma0_text += f"　位置参数 γ = {w.gamma:.2f}"
-            elif get_mode_spec(mode).uses_density and density is not None:
-                sigma0_text += f"（≈ {w.sigma0 * density * 100:.2f} MPa）"
+        sigma0_text = f"特征强度 σ₀ = {w.sigma0:.4f} GPa"
+        if w.gamma > 0:
+            sigma0_text += f"　位置参数 γ = {w.gamma:.4f} GPa"
         self._lbl_sigma0.setText(sigma0_text)
         self._lbl_r2.setText(f"拟合优度 R² = {w.r2:.4f}")
-        self._canvas.draw_weibull([w], labels=[name], sigma0_unit=unit)
+        self._canvas.draw_weibull([w], labels=[name], sigma0_unit="GPa")
 
     def _on_wfit_changed(self, *args) -> None:
         """切换拟合方法后重算（仅重算 Weibull 部分）。"""

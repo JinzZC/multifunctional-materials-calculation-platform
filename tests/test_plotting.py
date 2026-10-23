@@ -4,9 +4,10 @@ import math
 
 import matplotlib.pyplot as plt
 import numpy as np
+import pytest
 
 from fiber_tensile.core.models import WeibullResult
-from fiber_tensile.core.weibull import median_ranks, weibull_fit
+from fiber_tensile.core.weibull import median_ranks, weibull_fit, weibull_in_gpa, weibull_line_data
 from fiber_tensile.plotting import build_weibull_figure, fit_equation_text
 
 
@@ -40,11 +41,18 @@ def test_single_series_equation_annotated():
     fig = build_weibull_figure([w], labels=["批次A"], sigma0_unit="MPa")
     try:
         texts = _figure_texts(fig)
-        a = -w.m * math.log(w.sigma0)
+        a = -w.m * math.log(w.sigma0 / 1000)
         expected = f"$y = {w.m:.4f}x - {abs(a):.4f}$"
         assert any(expected in t for t in texts)
         assert any("拟合直线方程" in t for t in texts)
-        assert any(r"$x = \ln\sigma$" in t for t in texts)     # 坐标含义说明
+        assert any(r"$x = \ln(\sigma/\mathrm{GPa})$" in t for t in texts)
+        ax = fig.axes[0]
+        assert "GPa" in ax.get_xlabel() and "MPa" not in ax.get_xlabel()
+        assert np.asarray(ax.collections[0].get_offsets())[:, 0] == pytest.approx(
+            np.log(np.asarray(w.strengths_sorted) / 1000))
+        expected_x, expected_y = weibull_line_data(weibull_in_gpa(w))
+        assert ax.lines[0].get_xdata() == pytest.approx(expected_x)
+        assert ax.lines[0].get_ydata() == pytest.approx(expected_y)
     finally:
         plt.close(fig)
 

@@ -273,7 +273,7 @@ class CompareDialog(QDialog):
             layout.addWidget(toolbar)
             layout.addWidget(canvas, 1)
         else:
-            layout.addWidget(QLabel("（所选批次数据量不足，无法绘制 Weibull 对比图）"))
+            layout.addWidget(QLabel("（无法绘制 Weibull 对比图：需有效的分散强度数据；纺织纤维还需填写密度）"))
 
         buttons = QDialogButtonBox(QDialogButtonBox.Close)
         buttons.rejected.connect(self.reject)

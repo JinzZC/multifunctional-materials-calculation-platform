@@ -20,6 +20,13 @@ def run(output_path):
         from .mechanical.core import Spec, analyze
         from .mechanical.exporters import export_excel, export_pdf, export_csv
         from .mechanical.repository import save_entries, load_entry
+        from .core.models import Batch, Sample, MODE_FILAMENT
+        from .data.repository import create_batch, add_samples, get_batch, get_strengths
+        from .core.statistics import batch_statistics
+        from .core.weibull import weibull_fit
+        from .fileio.exporter_excel import export_excel_report
+        from .fileio.exporter_pdf import export_pdf_report
+        from openpyxl import load_workbook
 
         app = QApplication([])
         conn = open_database(default_db_path())
@@ -46,9 +53,43 @@ def run(output_path):
                 path = root / f"report.{extension}"
                 exporter(path, [entry])
                 assert path.stat().st_size > 100
+            # 确认 EXE 中实际包含本次 GPa 横坐标及 Origin 拟合线导出修复。
+            batch_id = create_batch(conn, Batch(batch_name="Weibull 合成验证", mode=MODE_FILAMENT))
+            add_samples(conn, batch_id, [
+                Sample(breaking_force=force, diameter_um=7.0)
+                for force in (7.1, 8.3, 9.5, 10.2, 12.4)
+            ])
+            batch = get_batch(conn, batch_id)
+            strengths = get_strengths(conn, batch_id)
+            win._nav.setCurrentRow(0)
+            win.analysis_tab.refresh()
+            win.analysis_tab._combo.setCurrentIndex(win.analysis_tab._combo.findData(batch_id))
+            win.analysis_tab._combo_wfit.setCurrentIndex(0)
+            win.analysis_tab._combo_rank.setCurrentIndex(1)
+            app.processEvents()
+            ax = win.analysis_tab._canvas.fig.axes[0]
+            assert "GPa" in ax.get_xlabel()
+            fit = weibull_fit(strengths, "mean_rank")
+            stats = batch_statistics(strengths)
+            export_excel_report(root / "weibull.xlsx", batch, stats, fit)
+            export_pdf_report(root / "weibull.pdf", batch, stats, fit)
+            workbook = load_workbook(root / "weibull.xlsx")
+            try:
+                scatter = list(workbook["Weibull 分析数据"].values)
+                assert scatter[0][1] == "σ(GPa)" and scatter[0][3] == "ln(σ/GPa)"
+                np.testing.assert_allclose([r[1] for r in scatter[1:]], np.sort(strengths) / 1000)
+                np.testing.assert_allclose([r[3:5] for r in scatter[1:]], ax.collections[0].get_offsets())
+                line = list(workbook["Weibull 拟合直线数据"].iter_rows(
+                    min_row=2, max_row=101, min_col=1, max_col=2, values_only=True))
+                assert len(line) == len(ax.lines[0].get_xdata()) == 100
+                np.testing.assert_allclose(np.asarray(line)[:, 0], ax.lines[0].get_xdata())
+                np.testing.assert_allclose(np.asarray(line)[:, 1], ax.lines[0].get_ydata())
+            finally:
+                workbook.close()
             checks = dict(version=APP_VERSION, navigation=6, modulus_gpa=result.modulus_gpa,
                           database_isolated=True, settings_isolated=True,
-                          exports=["xlsx", "pdf", "csv"], history=True)
+                          exports=["xlsx", "pdf", "csv"], history=True,
+                          weibull_gpa=True, weibull_line_points=100)
             output.write_text(json.dumps(checks, ensure_ascii=False, indent=2), encoding="utf-8")
         finally:
             if win is not None:

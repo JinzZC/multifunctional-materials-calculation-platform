@@ -83,6 +83,7 @@ class WeibullResult:
     gamma: float = 0.0
     steps: list = field(default_factory=list)   # 计算过程（MLE/3 参数用）
     rank_method: str = "hazen"                 # Weibull 绘图位置方法
+    strength_unit: str = ""                   # 空值表示调用方的原始强度单位
 
 
 @dataclass

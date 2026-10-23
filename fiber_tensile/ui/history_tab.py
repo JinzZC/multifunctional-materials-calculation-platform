@@ -14,7 +14,7 @@ from PySide6.QtWidgets import (
 
 from ..core.models import MODE_FILAMENT, MODE_LABELS, MODE_TEXTILE, strength_unit_label
 from ..core.statistics import batch_statistics
-from ..core.weibull import weibull_fit, weibull_fit_3p, weibull_fit_mle
+from ..core.weibull import weibull_fit, weibull_fit_3p, weibull_fit_mle, weibull_in_gpa
 from ..data.repository import (
     delete_batch, get_batch, get_strengths, list_batches, recalculate_batch,
 )
@@ -27,14 +27,16 @@ from .dialogs import CompareDialog
 logger = logging.getLogger(__name__)
 
 
-def _fit_weibull_with_preferences(strengths: list):
+def _fit_weibull_with_preferences(strengths: list, mode: str, density=None):
     fit_method = prefs.weibull_fit_method()
     rank_method = prefs.weibull_rank_method()
     if fit_method == "mle":
-        return weibull_fit_mle(strengths, rank_method)
-    if fit_method == "mle3p":
-        return weibull_fit_3p(strengths, rank_method)
-    return weibull_fit(strengths, rank_method)
+        result = weibull_fit_mle(strengths, rank_method)
+    elif fit_method == "mle3p":
+        result = weibull_fit_3p(strengths, rank_method)
+    else:
+        result = weibull_fit(strengths, rank_method)
+    return weibull_in_gpa(result, strength_unit_label(mode), density)
 
 
 class HistoryTab(QWidget):
@@ -240,21 +242,19 @@ class HistoryTab(QWidget):
         for b in selected:
             batch = get_batch(self._conn, b.id)
             strengths = get_strengths(self._conn, b.id)
-            # 单丝模式按 GPa 拟合（与分析页横轴一致）
-            fit_strengths = ([s / 1000.0 for s in strengths]
-                             if batch.mode == MODE_FILAMENT else strengths)
             try:
                 stats = batch_statistics(strengths)
-                weibull = _fit_weibull_with_preferences(fit_strengths)
             except ValueError:
                 continue
+            try:
+                weibull = _fit_weibull_with_preferences(strengths, batch.mode, batch.density)
+            except ValueError:
+                weibull = None
             payload.append((batch, stats, weibull))
         if len(payload) < 2:
             QMessageBox.warning(self, "无法对比", "所选批次数据不足，无法对比。")
             return
-        sigma0_unit = ("GPa" if payload[0][0].mode == MODE_FILAMENT
-                       else strength_unit_label(payload[0][0].mode))
-        CompareDialog(payload, self, sigma0_unit=sigma0_unit).exec()
+        CompareDialog(payload, self, sigma0_unit="GPa").exec()
 
     def _delete_selected(self) -> None:
         selected = self._selected_batches()

@@ -15,6 +15,7 @@ m 为 Weibull 模数（越大分散性越小），σ₀ 为特征强度（失效
 """
 
 import math
+from dataclasses import replace
 
 import numpy as np
 
@@ -27,6 +28,64 @@ RANK_METHODS = {
     "benard": ("Benard 中位秩", "(i − 0.3) / (N + 0.4)"),
     "blom": ("Blom", "(i − 0.375) / (N + 0.25)"),
 }
+
+
+def weibull_in_gpa(result: WeibullResult, source_unit: str = "MPa",
+                    density: float | None = None) -> WeibullResult:
+    """将拟合结果统一为 GPa，保留 m、R² 和排序概率，不重新拟合。
+
+    result 上的单位优先，可安全地对已换算结果再次调用。纺织强度
+    cN/dtex 必须提供密度（g/cm³），不能直接当作应力标为 GPa。
+    """
+    unit = result.strength_unit or source_unit
+    if unit == "GPa":
+        return result
+    if unit == "MPa":
+        factor = 0.001
+    elif unit == "cN/dtex":
+        if density is None or not math.isfinite(density) or density <= 0:
+            raise ValueError("纺织纤维按 GPa 进行 Weibull 分析需填写有效密度（g/cm³）。")
+        factor = density / 10.0
+    else:
+        raise ValueError(f"无法将强度单位 {unit!r} 换算为 GPa")
+    converted = replace(
+        result,
+        sigma0=result.sigma0 * factor,
+        gamma=result.gamma * factor,
+        strengths_sorted=[s * factor for s in result.strengths_sorted],
+        x=[x + math.log(factor) for x in result.x],
+        strength_unit="GPa",
+        steps=[f"以下为原始 {unit} 单位的拟合过程：", *result.steps],
+    )
+    converted.steps.extend([
+        f"绘图统一换算：1 {unit} = {factor:.12g} GPa，m 和 R² 不变。",
+        f"GPa 坐标下：y = {converted.m:.12g}·x "
+        f"{weibull_intercept(converted):+.12g}，x = {weibull_x_label(converted)}。",
+    ])
+    return converted
+
+
+def weibull_intercept(result: WeibullResult) -> float:
+    """当前强度单位下线性化拟合直线的截距 a。"""
+    return -result.m * math.log(result.sigma0)
+
+
+def weibull_x_label(result: WeibullResult) -> str:
+    """线性化横坐标；三参数必须扣除位置参数才能得到直线。"""
+    strength = "(σ−γ)" if result.gamma > 0 else "σ"
+    unit = result.strength_unit
+    return f"ln({strength}/{unit})" if unit else f"ln({strength})"
+
+
+def weibull_line_data(result: WeibullResult, point_count: int = 100) -> tuple[list, list]:
+    """生成覆盖散点 X 范围的等间距拟合直线；界面和导出共用。"""
+    if point_count < 2:
+        raise ValueError("拟合直线至少需要 2 个绘图点")
+    if len(result.x) < 2:
+        raise ValueError("数据量不足，无法生成拟合直线")
+    x = np.linspace(min(result.x), max(result.x), point_count)
+    y = result.m * x + weibull_intercept(result)
+    return x.tolist(), y.tolist()
 
 
 def rank_method_label(method: str) -> str:

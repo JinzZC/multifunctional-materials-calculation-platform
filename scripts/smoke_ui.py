@@ -19,7 +19,7 @@ _test_root = _environment.__enter__()
 import math
 
 from PySide6.QtCore import QTimer
-from PySide6.QtWidgets import QApplication, QComboBox, QMessageBox, QTableWidgetItem
+from PySide6.QtWidgets import QApplication, QComboBox, QFileDialog, QMessageBox, QTableWidgetItem
 
 # 冒烟测试中自动确认所有弹窗，避免阻塞
 QMessageBox.information = staticmethod(lambda *a, **k: QMessageBox.Ok)
@@ -27,12 +27,8 @@ QMessageBox.warning = staticmethod(lambda *a, **k: QMessageBox.Ok)
 QMessageBox.critical = staticmethod(lambda *a, **k: QMessageBox.Ok)
 QMessageBox.question = staticmethod(lambda *a, **k: QMessageBox.Yes)
 
-from fiber_tensile.core.statistics import batch_statistics
-from fiber_tensile.core.weibull import weibull_fit
 from fiber_tensile.data.db import open_database
 from fiber_tensile.data.repository import get_batch, get_strengths, list_batches
-from fiber_tensile.fileio.exporter_excel import export_excel_report
-from fiber_tensile.fileio.exporter_pdf import export_pdf_report
 from fiber_tensile.logging_setup import setup_logging
 from fiber_tensile.ui.main_window import MainWindow
 from fiber_tensile.ui import prefs
@@ -140,13 +136,35 @@ def main() -> int:
     # 4. 导出两种报告（走与 UI 按钮相同的底层函数）
     batch = get_batch(conn, batches[0].id)
     strengths = get_strengths(conn, batches[0].id)
-    stats, weibull = batch_statistics(strengths), weibull_fit(strengths)
     xlsx_path = os.path.join(tempfile.gettempdir(), "smoke_report.xlsx")
     pdf_path = os.path.join(tempfile.gettempdir(), "smoke_report.pdf")
-    export_excel_report(xlsx_path, batch, stats, weibull)
-    export_pdf_report(pdf_path, batch, stats, weibull)
+    old_save_dialog = QFileDialog.getSaveFileName
+    try:
+        # 走实际按钮入口，确认当前 Mean Rank 偏好及 GPa 坐标贯穿导出。
+        QFileDialog.getSaveFileName = staticmethod(lambda *a, **k: (xlsx_path, ""))
+        ana._btn_excel.click()
+        QFileDialog.getSaveFileName = staticmethod(lambda *a, **k: (pdf_path, ""))
+        ana._btn_pdf.click()
+    finally:
+        QFileDialog.getSaveFileName = old_save_dialog
     assert os.path.getsize(xlsx_path) > 1000
     assert open(pdf_path, "rb").read(5) == b"%PDF-"
+    import openpyxl
+    workbook = openpyxl.load_workbook(xlsx_path)
+    scatter = list(workbook["Weibull 分析数据"].values)
+    assert scatter[0][3] == "ln(σ/GPa)"
+    assert abs(scatter[1][2] - 1 / 6) < 1e-14  # Mean Rank，而非默认 Hazen
+    assert abs(scatter[1][3] - math.log(min(strengths) / 1000)) < 1e-14
+    ax = ana._canvas.fig.axes[0]
+    for exported, shown in zip(scatter[1:], ax.collections[0].get_offsets()):
+        assert abs(exported[3] - shown[0]) < 1e-14
+        assert abs(exported[4] - shown[1]) < 1e-14
+    line_data = list(workbook["Weibull 拟合直线数据"].iter_rows(
+        min_row=2, max_row=101, min_col=1, max_col=2, values_only=True))
+    assert len(ax.lines[0].get_xdata()) == len(line_data) == 100
+    for exported, x, y in zip(line_data, ax.lines[0].get_xdata(), ax.lines[0].get_ydata()):
+        assert abs(exported[0] - x) < 1e-14 and abs(exported[1] - y) < 1e-14
+    workbook.close()
 
     # 5. 历史 Tab：列表与明细
     hist = win.history_tab
@@ -154,6 +172,10 @@ def main() -> int:
     assert hist._batch_table.rowCount() == 1
     hist._batch_table.selectRow(0)
     assert hist._detail_table.rowCount() == 5
+    from fiber_tensile.ui.history_tab import _fit_weibull_with_preferences
+    comparison_fit = _fit_weibull_with_preferences(strengths, batch.mode, batch.density)
+    assert comparison_fit.strength_unit == "GPa"
+    assert all(abs(x - row[3]) < 1e-14 for x, row in zip(comparison_fit.x, scatter[1:]))
 
     # 6. 界面偏好：默认单位读写、窗口几何保存
     prefs.set_default_force_unit("N")

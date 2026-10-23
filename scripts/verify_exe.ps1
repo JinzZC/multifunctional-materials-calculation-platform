@@ -25,7 +25,7 @@ foreach ($executable in $executables) {
         throw ('Verification failed: ' + $executable)
     }
     $result = Get-Content -LiteralPath $resultFile -Raw | ConvertFrom-Json
-    if (-not $result.database_isolated -or -not $result.settings_isolated -or $result.navigation -ne 6 -or $result.exports.Count -ne 3) {
+    if (-not $result.database_isolated -or -not $result.settings_isolated -or $result.navigation -ne 6 -or $result.exports.Count -ne 3 -or -not $result.weibull_gpa -or $result.weibull_line_points -ne 100) {
         throw ('Incomplete verification: ' + $executable)
     }
     Write-Output ('VERIFIED: ' + $executable)
